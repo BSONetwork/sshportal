@@ -17,6 +17,7 @@ import (
 	"log"
 	"context"
 
+	"gorm.io/gorm"
 	shlex "github.com/anmitsu/go-shlex"
 	"github.com/asaskevich/govalidator"
 	"github.com/docker/docker/pkg/namesgenerator"
@@ -81,6 +82,28 @@ GLOBAL OPTIONS:
 		myself = &actx.user
 		db     = actx.db
 	)
+	
+	sess := dbmodels.Session{
+				UserID: actx.user.ID,
+				HostID: 0,
+				Status: string(dbmodels.SessionStatusActive),
+	}
+	if err := actx.db.Create(&sess).Error; err != nil {
+		log.Println(err)
+		return cli.NewExitError(err.Error(), 1)
+	}
+	
+	go func(s ssh.Session, dbConn *gorm.DB, sessionID uint) {
+		for {
+			sess := dbmodels.Session{Model: gorm.Model{ID: sessionID}, Status: string(dbmodels.SessionStatusActive)}
+			if err := dbConn.First(&sess).Error; err != nil || sess.Status != string(dbmodels.SessionStatusActive) {
+				log.Println("Session should be closed", sessionID, "closing connection")
+				s.Close()
+				break
+			}
+			time.Sleep(30 * time.Second) // TODO: VDO: make configurable
+		}
+	}(s, actx.db, sess.ID)
 
 	app.Commands = []cli.Command{
 		{
@@ -2517,6 +2540,14 @@ GLOBAL OPTIONS:
 			return s.Exit(1)
 		}
 	}
+	
+	now := time.Now()
+	sessUpdate := dbmodels.Session{
+		Status:    string(dbmodels.SessionStatusClosed),
+		ErrMsg:    "",
+		StoppedAt: &now,
+	}
+	actx.db.Model(&sess).Updates(&sessUpdate)
 
 	return nil
 }
