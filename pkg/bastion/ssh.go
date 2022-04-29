@@ -142,7 +142,7 @@ func ChannelHandler(srv *ssh.Server, conn *gossh.ServerConn, newChan gossh.NewCh
 					LogsLocation: actx.logsLocation,
 					LoggingMode:  currentHost.Logging,
 				}}, sessionConfigs...)
-				if *currentHost.HopID != 0 {
+				if currentHost.HopID != nil && *currentHost.HopID != 0 {
 					var newHost dbmodels.Host
 					if err := actx.db.Model(currentHost).Association("HopID").Find(&newHost); err != nil {
 						log.Printf("Error: %v", err)

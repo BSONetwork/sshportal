@@ -968,7 +968,7 @@ GLOBAL OPTIONS:
 								groupNames = append(groupNames, hostGroup.Name)
 							}
 							var hop string
-							if *host.HopID != 0 {
+							if host.HopID != nil && *host.HopID != 0 {
 								var hopHost dbmodels.Host
 								if err := db.Model(host).Association("HopID").Find(&hopHost); err != nil {
 									return err
