@@ -3,7 +3,6 @@ package bastion // import "moul.io/sshportal/pkg/bastion"
 import (
 	"bufio"
 	"encoding/json"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -13,12 +12,7 @@ import (
 	"runtime"
 	"strings"
 	"time"
-	"net"
-<<<<<<< HEAD
 	"log"
-=======
->>>>>>> 3d3ff0d (Add inverse cached DNS resolver for subnets, ACLs for host ls)
-	"context"
 
 	"gorm.io/gorm"
 	shlex "github.com/anmitsu/go-shlex"
@@ -46,8 +40,6 @@ var banner = `
 
 `
 var startTime = time.Now()
-
-var dnsCache = map[string]map[string]string {}
 
 const (
 	naMessage = "n/a"
@@ -888,8 +880,6 @@ GLOBAL OPTIONS:
 					Flags: []cli.Flag{
 						cli.BoolFlag{Name: "latest, l", Usage: "Show the latest host"},
 						cli.BoolFlag{Name: "quiet, q", Usage: "Only display IDs"},
-						cli.BoolFlag{Name: "resolve, r", Usage: "Perform reverse resolution against subnets"},
-						cli.BoolFlag{Name: "refresh-cache, c", Usage: "Force a cache refresh"},
 						cli.StringFlag{Name: "filter, f", Usage: "Filter by comment"},
 					},
 					Action: func(c *cli.Context) error {
@@ -919,52 +909,6 @@ GLOBAL OPTIONS:
 							return err
 						}
 						
-						if c.Bool("resolve") {
-								for _, host := range hosts {
-								//
-								if strings.Contains(host.Name, "/") {
-									_, ipnet, err := net.ParseCIDR(host.Name)
-									if err != nil {
-										continue
-									}
-									
-									if _, ok := dnsCache[host.Name]; !ok {
-										dnsCache[host.Name] = map[string]string{}
-									}
-									
-									mask := binary.BigEndian.Uint32(ipnet.Mask)
-									start := binary.BigEndian.Uint32(ipnet.IP)
-									finish := (start & mask) | (mask ^ 0xffffffff)
-									for i := start; i <= finish; i++ {
-											ip := make(net.IP, 4)
-											binary.BigEndian.PutUint32(ip, i)
-											resolvedName, ok := dnsCache[host.Name][ip.String()]
-											
-											if !ok || c.Bool("refresh-cache") {
-												var r net.Resolver
-												const timeout = 10 * time.Millisecond // TODO: VDO: make configurable
-												ctx, cancel := context.WithTimeout(context.TODO(), timeout)
-												defer cancel()
-
-												hostnames, err := r.LookupAddr(ctx, ip.String())
-												if err != nil || len(hostnames) == 0 {
-													dnsCache[host.Name][ip.String()] = ""
-													continue
-												}
-												dnsCache[host.Name][ip.String()] = hostnames[0]
-												resolvedName = hostnames[0]
-											}
-											if resolvedName != "" {
-												newHost := *host											
-												newHost.Name = resolvedName
-												newHost.URL = strings.Replace(newHost.URL, "*", ip.String(), -1)
-												hosts = append(hosts, &newHost)
-											}
-									}
-								}
-							}
-						}
-
 						if c.Bool("quiet") {
 							for _, host := range hosts {
 								fmt.Fprintln(s, host.ID)
