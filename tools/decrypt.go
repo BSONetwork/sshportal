@@ -58,7 +58,7 @@ func main() {
     return
   }
   key := []byte(os.Args[1])
-  if len(key) != 8 || len(key) != 16 || len(key) != 24 || len(key) != 32 {
+  if len(key) != 8 && len(key) != 16 && len(key) != 24 && len(key) != 32 {
     os.Stderr.WriteString("Invalid key size\n")
     usage(os.Args[0])
     return
