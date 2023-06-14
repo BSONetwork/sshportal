@@ -1288,6 +1288,9 @@ GLOBAL OPTIONS:
 					return err
 				}
 
+				fmt.Fprintf(s, "debug information is disabled")
+				return nil
+
 				fmt.Fprintf(s, "debug mode (server): %v\n", actx.debug)
 				hostname, _ := os.Hostname()
 				fmt.Fprintf(s, "Hostname: %s\n", hostname)
