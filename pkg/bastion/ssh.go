@@ -379,6 +379,6 @@ func PublicKeyAuthHandler(db *gorm.DB, logsLocation, aclCheckCmd, aesKey, dbDriv
 		// fallback
 		actx.err = errors.New("unknown ssh key")
 		actx.user = dbmodels.User{Name: "Anonymous"}
-		return true
+		return false
 	}
 }
