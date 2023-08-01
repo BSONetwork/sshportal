@@ -536,7 +536,15 @@ func DBInit(db *gorm.DB) error {
 				return tx.AutoMigrate(&ACL{})
 			},
 			Rollback: func(tx *gorm.DB) error { return fmt.Errorf("not implemented") },
-		},
+		}, {
+			ID: "33",
+			Migrate: func(tx *gorm.DB) error {
+				return tx.Create(&dbmodels.UserRole{Name: "operator"}).Error
+			},
+			Rollback: func(tx *gorm.DB) error {
+				return tx.Where("name = ?", "operator").Unscoped().Delete(&dbmodels.UserRole{}).Error
+			},
+		}, 
 	})
 	if err := m.Migrate(); err != nil {
 		return err

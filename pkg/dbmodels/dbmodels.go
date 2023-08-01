@@ -411,6 +411,9 @@ func (u *User) CheckSameGroupOrAdmin(entity string, names []string) error {
 	if err := u.CheckRoles([]string{"admin"}); err == nil {
 		return nil
 	}
+	if err := u.CheckRoles([]string{"operator"}); err != nil {
+		return err
+	}
 	for _, group := range u.Groups {
 		for _, name := range names {
 			if group.Name == name {
