@@ -77,6 +77,10 @@ GLOBAL OPTIONS:
 		myself = &actx.user
 		db     = actx.db
 	)
+
+	if err := db.Preload("Groups").Find(myself).Error; err != nil{
+		return cli.NewExitError(err.Error(), 1)
+	}
 	
 	sess := dbmodels.Session{
 				UserID: actx.user.ID,
@@ -759,7 +763,8 @@ GLOBAL OPTIONS:
 							return cli.ShowSubcommandHelp(c)
 						}
 
-						if err := myself.CheckRoles([]string{"admin"}); err != nil {
+						groupNames := c.StringSlice("group")
+						if err := myself.CheckAllGroupsOrAdmin(c.String("name"), groupNames); err != nil {
 							return err
 						}
 
@@ -974,13 +979,19 @@ GLOBAL OPTIONS:
 							return cli.ShowSubcommandHelp(c)
 						}
 
-						if err := myself.CheckRoles([]string{"admin"}); err != nil {
+						var hosts []dbmodels.Host
+						if err := dbmodels.HostsByIdentifiers(db, c.Args()).Preload("Groups").Find(&hosts).Error; err != nil {
 							return err
 						}
 
-						var hosts []dbmodels.Host
-						if err := dbmodels.HostsByIdentifiers(db, c.Args()).Find(&hosts).Error; err != nil {
-							return err
+						for _, host := range hosts {
+							groupNames := []string{}
+							for _, hg := range host.Groups {
+								groupNames = append(groupNames, hg.Name)
+							}
+							if err := myself.CheckSameGroupOrAdmin(host.Name, groupNames); err != nil {
+								return err
+							}
 						}
 
 						for _, host := range hosts {
@@ -1011,13 +1022,19 @@ GLOBAL OPTIONS:
 							return cli.ShowSubcommandHelp(c)
 						}
 
-						if err := myself.CheckRoles([]string{"admin"}); err != nil {
+						var hosts []dbmodels.Host
+						if err := dbmodels.HostsByIdentifiers(db, c.Args()).Preload("Groups").Find(&hosts).Error; err != nil {
 							return err
 						}
 
-						var hosts []dbmodels.Host
-						if err := dbmodels.HostsByIdentifiers(db, c.Args()).Find(&hosts).Error; err != nil {
-							return err
+						for _, host := range hosts {
+							groupNames := []string{}
+							for _, hg := range host.Groups {
+								groupNames = append(groupNames, hg.Name)
+							}
+							if err := myself.CheckSameGroupOrAdmin(host.Name, groupNames); err != nil {
+								return err
+							}
 						}
 
 						if len(hosts) > 1 && c.String("name") != "" {

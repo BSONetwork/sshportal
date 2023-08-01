@@ -63,7 +63,7 @@ type Host struct {
 	Groups   []*HostGroup `gorm:"many2many:host_host_groups;"`
 	Comment  string       `valid:"optional"`
 	Logging  string       `valid:"optional,host_logging_mode"`
-	Hop      *Host 			 `gorm:"constraint:OnUpdate:CASCADE,OnDelete:SET NULL;"`
+	Hop      *Host 		  `gorm:"constraint:OnUpdate:CASCADE,OnDelete:SET NULL;"`
 	HopID    *uint
 }
 
@@ -405,6 +405,29 @@ func (u *User) CheckRoles(names []string) error {
 		}
 	}
 	return fmt.Errorf("you don't have permission to access this feature (requires any of these roles: '%s')", strings.Join(names, "', '"))
+}
+
+func (u *User) CheckSameGroupOrAdmin(entity string, names []string) error {
+	if err := u.CheckRoles([]string{"admin"}); err == nil {
+		return nil
+	}
+	for _, group := range u.Groups {
+		for _, name := range names {
+			if group.Name == name {
+				return nil
+			}
+		}
+	}
+	return fmt.Errorf("you don't have permission to edit this entity '%s' (user not in group)\n", entity)
+}
+
+func (u *User) CheckAllGroupsOrAdmin(entity string, names []string) error {
+	for _, name := range names {
+		if err := u.CheckSameGroupOrAdmin(entity, []string{name}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ACL helpers
