@@ -978,6 +978,17 @@ GLOBAL OPTIONS:
 							return err
 						}
 
+						var hosts []dbmodels.Host
+						if err := dbmodels.HostsByIdentifiers(db, c.Args()).Find(&hosts).Error; err != nil {
+							return err
+						}
+
+						for _, host := range hosts {
+							if err := db.Model(&host).Association("Groups").Clear(); err != nil {
+								return err
+							}
+						}
+
 						return dbmodels.HostsByIdentifiers(db, c.Args()).Unscoped().Delete(&dbmodels.Host{}).Error
 					},
 				}, {
