@@ -1471,25 +1471,34 @@ GLOBAL OPTIONS:
 					Usage:     "Shows detailed information on one or more keys",
 					ArgsUsage: "KEY...",
 					Flags: []cli.Flag{
-						cli.BoolFlag{Name: "decrypt", Usage: "Decrypt sensitive data"},
+						cli.BoolFlag{Name: "full", Usage: "Show all hosts that are using the key"},
 					},
 					Action: func(c *cli.Context) error {
 						if c.NArg() < 1 {
 							return cli.ShowSubcommandHelp(c)
 						}
 
-						if err := myself.CheckRoles([]string{"admin"}); err != nil {
+						if err := myself.CheckRoles([]string{"admin", "operator"}); err != nil {
 							return err
 						}
 
 						var keys []*dbmodels.SSHKey
-						if err := dbmodels.SSHKeysByIdentifiers(dbmodels.SSHKeysPreload(db), c.Args()).Find(&keys).Error; err != nil {
+						scope := db
+
+						if c.Bool("full") && myself.CheckRoles([]string{"admin"}) == nil {
+							scope = dbmodels.SSHKeysPreload(db)
+						}
+						if err := dbmodels.SSHKeysByIdentifiers(scope, c.Args()).Find(&keys).Error; err != nil {
 							return err
 						}
 
-						if c.Bool("decrypt") {
+						if myself.CheckRoles([]string{"admin"}) == nil {
 							for _, key := range keys {
 								crypto.SSHKeyDecrypt(actx.aesKey, key)
+							}
+						} else {
+							for _, key := range keys {
+								key.PrivKey = ""
 							}
 						}
 
@@ -1505,7 +1514,7 @@ GLOBAL OPTIONS:
 						cli.BoolFlag{Name: "quiet, q", Usage: "Only display IDs"},
 					},
 					Action: func(c *cli.Context) error {
-						if err := myself.CheckRoles([]string{"admin"}); err != nil {
+						if err := myself.CheckRoles([]string{"admin", "operator"}); err != nil {
 							return err
 						}
 
