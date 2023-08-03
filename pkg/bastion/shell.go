@@ -6,15 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/url"
 	"os"
 	"regexp"
 	"runtime"
 	"strings"
 	"time"
-	"log"
 
-	"gorm.io/gorm"
 	shlex "github.com/anmitsu/go-shlex"
 	"github.com/asaskevich/govalidator"
 	"github.com/docker/docker/pkg/namesgenerator"
@@ -25,6 +24,7 @@ import (
 	"github.com/urfave/cli"
 	gossh "golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/terminal" // nolint:staticcheck
+	"gorm.io/gorm"
 	"moul.io/sshportal/pkg/crypto"
 	"moul.io/sshportal/pkg/dbmodels"
 	"moul.io/sshportal/pkg/utils"
@@ -78,20 +78,20 @@ GLOBAL OPTIONS:
 		db     = actx.db
 	)
 
-	if err := db.Preload("Groups").Find(myself).Error; err != nil{
+	if err := db.Preload("Groups").Preload("Groups.ACLs").Find(myself).Error; err != nil {
 		return cli.NewExitError(err.Error(), 1)
 	}
-	
+
 	sess := dbmodels.Session{
-				UserID: actx.user.ID,
-				HostID: 0,
-				Status: string(dbmodels.SessionStatusActive),
+		UserID: actx.user.ID,
+		HostID: 0,
+		Status: string(dbmodels.SessionStatusActive),
 	}
 	if err := actx.db.Create(&sess).Error; err != nil {
 		log.Println(err)
 		return cli.NewExitError(err.Error(), 1)
 	}
-	
+
 	go func(s ssh.Session, dbConn *gorm.DB, sessionID uint) {
 		for {
 			sess := dbmodels.Session{Model: gorm.Model{ID: sessionID}, Status: string(dbmodels.SessionStatusActive)}
@@ -280,7 +280,7 @@ GLOBAL OPTIONS:
 						if err := myself.CheckRoles([]string{"admin"}); err != nil {
 							return err
 						}
-						
+
 						var acls []dbmodels.ACL
 						if err := dbmodels.ACLsByIdentifiers(db, c.Args()).Preload("UserGroups").Preload("HostGroups").Find(&acls).Error; err != nil {
 							return err
@@ -777,9 +777,16 @@ GLOBAL OPTIONS:
 							return cli.ShowSubcommandHelp(c)
 						}
 
-						groupNames := c.StringSlice("group")
-						if err := myself.CheckAllGroupsOrAdmin(c.String("name"), groupNames); err != nil {
+						groups := []*dbmodels.HostGroup{}
+						if err := dbmodels.HostGroupsByIdentifiers(db, c.StringSlice("group")).Preload("ACLs").Find(&groups).Error; err != nil {
 							return err
+						}
+
+						isAdmin := myself.CheckRoles([]string{"admin"}) == nil
+						isOperator := myself.CheckRoles([]string{"operator"}) == nil && checkACLs(*myself, nil, groups, "") == string(dbmodels.ACLActionAllow)
+
+						if !isAdmin && !isOperator {
+							return fmt.Errorf("You do not have permissions to run this command")
 						}
 
 						u, err := parseInputURL(c.Args().First())
@@ -860,33 +867,28 @@ GLOBAL OPTIONS:
 					Name:      "inspect",
 					Usage:     "Shows detailed information on one or more hosts",
 					ArgsUsage: "HOST...",
-					Flags: []cli.Flag{
-						cli.BoolFlag{Name: "decrypt", Usage: "Decrypt sensitive data"},
-					},
+					Flags:     []cli.Flag{},
 					Action: func(c *cli.Context) error {
 						if c.NArg() < 1 {
 							return cli.ShowSubcommandHelp(c)
 						}
 
-						if err := myself.CheckRoles([]string{"admin", "listhosts"}); err != nil {
+						var hosts []*dbmodels.Host
+						if err := dbmodels.HostsByIdentifiers(db, c.Args()).Preload("Groups").Preload("Groups.ACLs").Find(&hosts).Error; err != nil {
 							return err
 						}
-						
-						var hosts []*dbmodels.Host
-						if myself.HasRole("admin") {
-							if err := dbmodels.HostsByIdentifiers(db.Preload("Groups").Preload("SSHKey"), c.Args()).Find(&hosts).Error; err != nil {
-								return err
-							}
-						} else {
-							if err := dbmodels.HostsByIdentifiers(db.Preload("Groups"), c.Args()).Find(&hosts).Error; err != nil {
-								return err
-							}
-						}
 
-						if c.Bool("decrypt") {
-							for _, host := range hosts {
-								crypto.HostDecrypt(actx.aesKey, host)
+						for _, host := range hosts {
+							isAdmin := myself.CheckRoles([]string{"admin"}) == nil
+							isOperator := myself.CheckRoles([]string{"operator"}) == nil && checkACLs(*myself, host, host.Groups, "") == string(dbmodels.ACLActionAllow)
+
+							if !isAdmin && !isOperator {
+								return fmt.Errorf("You do not have permissions to run this command")
 							}
+							if isOperator {
+								host.Groups = nil
+							}
+
 						}
 
 						enc := json.NewEncoder(s)
@@ -902,21 +904,17 @@ GLOBAL OPTIONS:
 						cli.StringFlag{Name: "filter, f", Usage: "Filter by comment"},
 					},
 					Action: func(c *cli.Context) error {
-						if err := myself.CheckRoles([]string{"admin", "listhosts"}); err != nil {
-							return err
-						}
-						
 						isAdmin := myself.CheckRoles([]string{"admin"}) == nil
-						
+
 						var tmpUser dbmodels.User
 						if err := db.Preload("Groups").Preload("Groups.ACLs").Where("id = ?", myself.ID).First(&tmpUser).Error; err != nil {
-								return err
+							return err
 						}
 
 						var hosts []*dbmodels.Host
 						query := db.Order("created_at desc").Preload("Groups").Preload("Groups.ACLs")
 						if c.String("filter") != "" {
-							query = db.Where("lower(comment) LIKE ?", "%" + strings.ToLower(c.String("filter")) + "%").Order("created_at desc").Preload("Groups").Preload("Groups.ACLs")
+							query = db.Where("lower(comment) LIKE ?", "%"+strings.ToLower(c.String("filter"))+"%").Order("created_at desc").Preload("Groups").Preload("Groups.ACLs")
 						}
 						if c.Bool("latest") {
 							var host dbmodels.Host
@@ -927,7 +925,7 @@ GLOBAL OPTIONS:
 						} else if err := query.Find(&hosts).Error; err != nil {
 							return err
 						}
-						
+
 						if c.Bool("quiet") {
 							for _, host := range hosts {
 								fmt.Fprintln(s, host.ID)
@@ -993,18 +991,17 @@ GLOBAL OPTIONS:
 							return cli.ShowSubcommandHelp(c)
 						}
 
-						var hosts []dbmodels.Host
-						if err := dbmodels.HostsByIdentifiers(db, c.Args()).Preload("Groups").Find(&hosts).Error; err != nil {
+						var hosts []*dbmodels.Host
+						if err := dbmodels.HostsByIdentifiers(db, c.Args()).Preload("Groups").Preload("Groups.ACLs").Find(&hosts).Error; err != nil {
 							return err
 						}
 
 						for _, host := range hosts {
-							groupNames := []string{}
-							for _, hg := range host.Groups {
-								groupNames = append(groupNames, hg.Name)
-							}
-							if err := myself.CheckSameGroupOrAdmin(host.Name, groupNames); err != nil {
-								return err
+							isAdmin := myself.CheckRoles([]string{"admin"}) == nil
+							isOperator := myself.CheckRoles([]string{"operator"}) == nil && checkACLs(*myself, host, host.Groups, "") == string(dbmodels.ACLActionAllow)
+
+							if !isAdmin && !isOperator {
+								return fmt.Errorf("You do not have permissions to run this command")
 							}
 						}
 
@@ -1036,18 +1033,17 @@ GLOBAL OPTIONS:
 							return cli.ShowSubcommandHelp(c)
 						}
 
-						var hosts []dbmodels.Host
-						if err := dbmodels.HostsByIdentifiers(db, c.Args()).Preload("Groups").Find(&hosts).Error; err != nil {
+						var hosts []*dbmodels.Host
+						if err := dbmodels.HostsByIdentifiers(db, c.Args()).Preload("Groups").Preload("Groups.ACLs").Find(&hosts).Error; err != nil {
 							return err
 						}
 
 						for _, host := range hosts {
-							groupNames := []string{}
-							for _, hg := range host.Groups {
-								groupNames = append(groupNames, hg.Name)
-							}
-							if err := myself.CheckSameGroupOrAdmin(host.Name, groupNames); err != nil {
-								return err
+							isAdmin := myself.CheckRoles([]string{"admin"}) == nil
+							isOperator := myself.CheckRoles([]string{"operator"}) == nil && checkACLs(*myself, host, host.Groups, "") == string(dbmodels.ACLActionAllow)
+
+							if !isAdmin && !isOperator {
+								return fmt.Errorf("You do not have permissions to run this command")
 							}
 						}
 
@@ -1720,12 +1716,12 @@ GLOBAL OPTIONS:
 						if err := myself.CheckRoles([]string{"admin"}); err != nil {
 							return err
 						}
-						
+
 						var users []*dbmodels.User
 						if err := dbmodels.UsersByIdentifiers(db, c.Args()).Find(&users).Error; err != nil {
 							return err
 						}
-						
+
 						for _, user := range users {
 							if user.Email == myself.Email && !c.Bool("force") {
 								continue
@@ -1749,7 +1745,7 @@ GLOBAL OPTIONS:
 						if c.NArg() < 1 {
 							return cli.ShowSubcommandHelp(c)
 						}
-						
+
 						if c.String("override") != "I_understand_this_is_irreversible" {
 							return errors.New("Please set the correct --override flag to proceed")
 						}
@@ -1757,17 +1753,17 @@ GLOBAL OPTIONS:
 						if err := myself.CheckRoles([]string{"admin"}); err != nil {
 							return err
 						}
-						
+
 						var users []*dbmodels.User
 						if err := dbmodels.UsersByIdentifiers(db, c.Args()).Find(&users).Error; err != nil {
 							return err
 						}
-						
+
 						for _, user := range users {
-							if user.Email == myself.Email && !c.Bool("force")  {
+							if user.Email == myself.Email && !c.Bool("force") {
 								continue
 							}
-						
+
 							if err := db.Where("user_id = ?", user.ID).Delete(&dbmodels.UserKey{}).Error; err != nil {
 								return err
 							}
@@ -1979,9 +1975,9 @@ GLOBAL OPTIONS:
 								tx.Rollback()
 								return err
 							}
-							
+
 							groups := tx.Model(user).Association("Groups")
-							
+
 							if err := groups.Append(&appendGroups); err != nil {
 								tx.Rollback()
 								return err
@@ -2002,7 +1998,7 @@ GLOBAL OPTIONS:
 								tx.Rollback()
 								return err
 							}
-							
+
 							roles := tx.Model(user).Association("Roles")
 
 							if err := roles.Append(&appendRoles); err != nil {
@@ -2541,7 +2537,7 @@ GLOBAL OPTIONS:
 			return s.Exit(1)
 		}
 	}
-	
+
 	now := time.Now()
 	sessUpdate := dbmodels.Session{
 		Status:    string(dbmodels.SessionStatusClosed),

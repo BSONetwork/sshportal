@@ -44,11 +44,12 @@ func checkACLs(user dbmodels.User, host *dbmodels.Host, groups []*dbmodels.HostG
 	// FIXME: add ACLs that match host pattern
 
 	// if no shared ACL then execute ACLs hook if it exists and return its result
+
 	if len(aclMap) == 0 {
 		if host == nil {
 			return string(dbmodels.ACLActionDeny)
 		}
-		action, err := checkACLsHook(aclCheckCmd, string(dbmodels.ACLActionDeny), user, *host)
+		action, err := checkACLsHook(aclCheckCmd, string(dbmodels.ACLActionDeny), user, host)
 		if err != nil {
 			log.Println(err)
 		}
@@ -62,7 +63,7 @@ func checkACLs(user dbmodels.User, host *dbmodels.Host, groups []*dbmodels.HostG
 	}
 	sort.Sort(byWeight(acls))
 
-	action, err := checkACLsHook(aclCheckCmd, acls[0].Action, user, *host)
+	action, err := checkACLsHook(aclCheckCmd, acls[0].Action, user, host)
 	if err != nil {
 		log.Println(err)
 	}
@@ -76,8 +77,8 @@ func checkACLs(user dbmodels.User, host *dbmodels.Host, groups []*dbmodels.HostG
 // $3 - Host as JSON string
 // External program has to return `allow` or `deny` in stdout.
 // In case of any error function returns `action`.
-func checkACLsHook(aclCheckCmd string, action string, user dbmodels.User, host dbmodels.Host) (string, error) {
-	if aclCheckCmd == "" {
+func checkACLsHook(aclCheckCmd string, action string, user dbmodels.User, host *dbmodels.Host) (string, error) {
+	if aclCheckCmd == "" || host == nil {
 		return action, nil
 	}
 
