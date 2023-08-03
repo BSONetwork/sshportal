@@ -1038,9 +1038,14 @@ GLOBAL OPTIONS:
 							return err
 						}
 
+						newGroups := []*dbmodels.HostGroup{}
+						if err := dbmodels.HostGroupsByIdentifiers(db, c.StringSlice("assign-group")).Preload("ACLs").Find(&newGroups).Error; err != nil {
+							return err
+						}
+
 						for _, host := range hosts {
 							isAdmin := myself.CheckRoles([]string{"admin"}) == nil
-							isOperator := myself.CheckRoles([]string{"operator"}) == nil && checkACLs(*myself, host, host.Groups, "") == string(dbmodels.ACLActionAllow)
+							isOperator := myself.CheckRoles([]string{"operator"}) == nil && checkACLs(*myself, host, host.Groups, "") == string(dbmodels.ACLActionAllow) && checkACLs(*myself, nil, newGroups, "") == string(dbmodels.ACLActionAllow)
 
 							if !isAdmin && !isOperator {
 								return fmt.Errorf("You do not have permissions to run this command")
