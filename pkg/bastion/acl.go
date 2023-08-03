@@ -22,14 +22,14 @@ func (a byWeight) Len() int           { return len(a) }
 func (a byWeight) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 func (a byWeight) Less(i, j int) bool { return a[i].Weight < a[j].Weight }
 
-func checkACLs(user dbmodels.User, host dbmodels.Host, aclCheckCmd string) string {
+func checkACLs(user dbmodels.User, host *dbmodels.Host, groups []*dbmodels.HostGroup, aclCheckCmd string) string {
 	currentTime := time.Now()
 
 	// shared ACLs between user and host
 	aclMap := map[uint]*dbmodels.ACL{}
 	for _, userGroup := range user.Groups {
 		for _, userGroupACL := range userGroup.ACLs {
-			for _, hostGroup := range host.Groups {
+			for _, hostGroup := range groups {
 				for _, hostGroupACL := range hostGroup.ACLs {
 					if userGroupACL.ID == hostGroupACL.ID {
 						if (userGroupACL.Inception == nil || currentTime.After(*userGroupACL.Inception)) &&
@@ -45,7 +45,10 @@ func checkACLs(user dbmodels.User, host dbmodels.Host, aclCheckCmd string) strin
 
 	// if no shared ACL then execute ACLs hook if it exists and return its result
 	if len(aclMap) == 0 {
-		action, err := checkACLsHook(aclCheckCmd, string(dbmodels.ACLActionDeny), user, host)
+		if host == nil {
+			return string(dbmodels.ACLActionDeny)
+		}
+		action, err := checkACLsHook(aclCheckCmd, string(dbmodels.ACLActionDeny), user, *host)
 		if err != nil {
 			log.Println(err)
 		}
@@ -59,7 +62,7 @@ func checkACLs(user dbmodels.User, host dbmodels.Host, aclCheckCmd string) strin
 	}
 	sort.Sort(byWeight(acls))
 
-	action, err := checkACLsHook(aclCheckCmd, acls[0].Action, user, host)
+	action, err := checkACLsHook(aclCheckCmd, acls[0].Action, user, *host)
 	if err != nil {
 		log.Println(err)
 	}

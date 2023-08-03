@@ -240,7 +240,8 @@ func bastionClientConfig(ctx ssh.Context, host *dbmodels.Host) (*gossh.ClientCon
 		return nil, err
 	}
 
-	action := checkACLs(tmpUser, tmpHost, actx.aclCheckCmd)
+	action := checkACLs(tmpUser, &tmpHost, tmpHost.Groups, actx.aclCheckCmd)
+
 	switch action {
 	case string(dbmodels.ACLActionAllow):
 		// do nothing

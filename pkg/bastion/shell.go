@@ -926,7 +926,7 @@ GLOBAL OPTIONS:
 						table.SetBorder(false)
 						shown := 0
 						for _, host := range hosts {
-							if !isAdmin && checkACLs(tmpUser, *host, "") != string(dbmodels.ACLActionAllow) {
+							if !isAdmin && checkACLs(tmpUser, host, host.Groups, "") != string(dbmodels.ACLActionAllow) {
 								continue
 							}
 							shown++
