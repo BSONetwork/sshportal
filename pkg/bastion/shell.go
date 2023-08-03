@@ -280,6 +280,20 @@ GLOBAL OPTIONS:
 						if err := myself.CheckRoles([]string{"admin"}); err != nil {
 							return err
 						}
+						
+						var acls []dbmodels.ACL
+						if err := dbmodels.ACLsByIdentifiers(db, c.Args()).Preload("UserGroups").Preload("HostGroups").Find(&acls).Error; err != nil {
+							return err
+						}
+
+						for _, acl := range acls {
+							if err := db.Model(&acl).Association("HostGroups").Clear(); err != nil {
+								return err
+							}
+							if err := db.Model(&acl).Association("UserGroups").Clear(); err != nil {
+								return err
+							}
+						}
 
 						return dbmodels.ACLsByIdentifiers(db, c.Args()).Unscoped().Delete(&dbmodels.ACL{}).Error
 					},
