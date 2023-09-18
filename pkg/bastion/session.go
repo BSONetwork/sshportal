@@ -34,7 +34,6 @@ type sessionConfig struct {
 }
 
 func multiChannelHandler(conn *gossh.ServerConn, newChan gossh.NewChannel, ctx ssh.Context, configs []sessionConfig, sessionID uint) error {
-	log.Printf("MultiChannelHandler: ChannelType: %s \n", newChan.ChannelType())
 	var lastClient *gossh.Client
 	switch newChan.ChannelType() {
 	case "session":
