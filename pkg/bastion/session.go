@@ -22,6 +22,8 @@ const (
 	authAgentChannelOpenSSH = "auth-agent@openssh.com"
 	authAgentReqRFC         = "auth-agent-req"
 	authAgentChannelRFC     = "auth-agent"
+	x11ReqRFC               = "x11-req"
+	x11ChannelRFC           = "x11"
 )
 
 type sessionConfig struct {
@@ -32,6 +34,7 @@ type sessionConfig struct {
 }
 
 func multiChannelHandler(conn *gossh.ServerConn, newChan gossh.NewChannel, ctx ssh.Context, configs []sessionConfig, sessionID uint) error {
+	log.Printf("MultiChannelHandler: ChannelType: %s \n", newChan.ChannelType())
 	var lastClient *gossh.Client
 	switch newChan.ChannelType() {
 	case "session":
@@ -222,6 +225,12 @@ func pipe(serverConn *gossh.ServerConn, client *gossh.Client, lreqs, rreqs <-cha
 				}
 			}
 
+			if req.Type == x11ReqRFC {
+				if err := ForwardToRemoteX11(x11ChannelRFC, serverConn, client); err != nil {
+					log.Println("Failed to forward x11-req", err)
+				}
+			}
+
 			if err != nil {
 				errch <- err
 			}
@@ -304,6 +313,35 @@ func ForwardToRemote(chanName string, conn *gossh.ServerConn, client *gossh.Clie
 			go gossh.DiscardRequests(rreqs)
 
 			forwardChannel(rch, lch)
+		}
+	}()
+	return nil
+}
+
+func ForwardToRemoteX11(chanName string, conn *gossh.ServerConn, client *gossh.Client) error {
+	channels := client.HandleChannelOpen(chanName)
+	if channels == nil {
+		return errors.New("X11 Forwarding: already have handler for " + chanName)
+	}
+
+	go func() {
+		for ch := range channels {
+			lch, reqs, err := ch.Accept()
+			if err != nil {
+				log.Println("On X11 forward channel accept", err)
+				continue
+			}
+			defer lch.Close()
+			go gossh.DiscardRequests(reqs)
+			rch, rreqs, err := conn.OpenChannel(chanName, ch.ExtraData())
+			if err != nil {
+				log.Println("On X11 forward channel open", err)
+				continue
+			}
+			defer rch.Close()
+			go gossh.DiscardRequests(rreqs)
+
+			go forwardChannel(rch, lch)
 		}
 	}()
 	return nil
