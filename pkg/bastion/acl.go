@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"regexp"
 	"os/exec"
 	"sort"
 	"strings"
@@ -22,20 +23,29 @@ func (a byWeight) Len() int           { return len(a) }
 func (a byWeight) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 func (a byWeight) Less(i, j int) bool { return a[i].Weight < a[j].Weight }
 
-func checkACLs(user dbmodels.User, host *dbmodels.Host, groups []*dbmodels.HostGroup, aclCheckCmd string) string {
+func checkExpiration(acl *dbmodels.ACL) bool {
 	currentTime := time.Now()
+	return (acl.Inception == nil || currentTime.After(*acl.Inception)) &&
+		(acl.Expiration == nil || currentTime.Before(*acl.Expiration))
+}
 
+func checkACLs(user dbmodels.User, host *dbmodels.Host, groups []*dbmodels.HostGroup, aclCheckCmd string) string {
 	// shared ACLs between user and host
 	aclMap := map[uint]*dbmodels.ACL{}
 	for _, userGroup := range user.Groups {
 		for _, userGroupACL := range userGroup.ACLs {
 			for _, hostGroup := range groups {
-				for _, hostGroupACL := range hostGroup.ACLs {
-					if userGroupACL.ID == hostGroupACL.ID {
-						if (userGroupACL.Inception == nil || currentTime.After(*userGroupACL.Inception)) &&
-							(userGroupACL.Expiration == nil || currentTime.Before(*userGroupACL.Expiration)) {
+				validWildcard := false
+				if userGroupACL.HostPattern != "" {
+					re := regexp.MustCompile(userGroupACL.HostPattern)
+					validWildcard = re.MatchString(hostGroup.Name)
+					if validWildcard && checkExpiration(userGroupACL) {
 							aclMap[userGroupACL.ID] = userGroupACL
-						}
+					}
+				}
+				for _, hostGroupACL := range hostGroup.ACLs {
+					if userGroupACL.ID == hostGroupACL.ID && checkExpiration(userGroupACL) {
+						aclMap[userGroupACL.ID] = userGroupACL
 					}
 				}
 			}

@@ -116,7 +116,7 @@ GLOBAL OPTIONS:
 					Flags: []cli.Flag{
 						cli.StringSliceFlag{Name: "hostgroup, hg", Usage: "Assigns `HOSTGROUPS` to the acl"},
 						cli.StringSliceFlag{Name: "usergroup, ug", Usage: "Assigns `USERGROUP` to the acl"},
-						cli.StringFlag{Name: "pattern", Usage: "Assigns a host pattern to the acl"},
+						cli.StringFlag{Name: "pattern", Usage: "Specifies a hostgroup wildcard for the acl, "},
 						cli.StringFlag{Name: "comment", Usage: "Adds a comment"},
 						cli.StringFlag{Name: "action", Usage: "Assigns the ACL action (allow,deny)", Value: string(dbmodels.ACLActionAllow)},
 						cli.UintFlag{Name: "weight, w", Usage: "Assigns the ACL weight (priority)"},
@@ -169,7 +169,12 @@ GLOBAL OPTIONS:
 							return fmt.Errorf("an ACL must have at least one user group")
 						}
 						if len(acl.HostGroups) == 0 && acl.HostPattern == "" {
-							return fmt.Errorf("an ACL must have at least one host group or host pattern")
+							return fmt.Errorf("an ACL must have at least one host group or hostgroup pattern")
+						}
+						acl.HostPattern = strings.Replace("^" + acl.HostPattern, "*", ".*" + "$", -1)
+						_, patternErr := regexp.Compile(acl.HostPattern)
+						if patternErr != nil {
+							return fmt.Errorf("Error: invalid regexp for hostgroup pattern", acl.HostPattern, patternErr)
 						}
 
 						if err := db.Create(&acl).Error; err != nil {
@@ -230,7 +235,7 @@ GLOBAL OPTIONS:
 						}
 
 						table := tablewriter.NewWriter(s)
-						table.SetHeader([]string{"ID", "Weight", "User groups", "Host groups", "Host pattern", "Action", "Inception", "Expiration", "Updated", "Created", "Comment"})
+						table.SetHeader([]string{"ID", "Weight", "User groups", "Host groups", "Group wildcard", "Action", "Inception", "Expiration", "Updated", "Created", "Comment"})
 						table.SetBorder(false)
 						table.SetCaption(true, fmt.Sprintf("Total: %d ACLs.", len(acls)))
 						for _, acl := range acls {
@@ -303,7 +308,7 @@ GLOBAL OPTIONS:
 					ArgsUsage: "ACL...",
 					Flags: []cli.Flag{
 						cli.StringFlag{Name: "action, a", Usage: "Update action"},
-						cli.StringFlag{Name: "pattern, p", Usage: "Update host-pattern"},
+						cli.StringFlag{Name: "pattern, p", Usage: "Update hostgroup pattern"},
 						cli.UintFlag{Name: "weight, w", Usage: "Update weight"},
 						cli.StringFlag{Name: "inception, i", Usage: "Update inception date-time"},
 						cli.BoolFlag{Name: "unset-inception", Usage: "Unset inception date-time"},
@@ -340,14 +345,20 @@ GLOBAL OPTIONS:
 								return err
 							}
 
+							hostPattern := strings.Replace("^" + c.String("pattern"), "*", ".*" + "$", -1)
+							_, patternErr := regexp.Compile(hostPattern)
+							if patternErr != nil {
+								return fmt.Errorf("Error: invalid regexp for hostgroup pattern", hostPattern, patternErr)
+							}
 							update := dbmodels.ACL{
 								Action:      c.String("action"),
-								HostPattern: c.String("pattern"),
+								HostPattern: hostPattern,
 								Weight:      c.Uint("weight"),
 								Inception:   inception,
 								Expiration:  expiration,
 								Comment:     c.String("comment"),
 							}
+
 							if err := model.Updates(update).Error; err != nil {
 								tx.Rollback()
 								return err
