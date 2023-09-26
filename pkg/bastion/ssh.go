@@ -135,7 +135,7 @@ func ChannelHandler(srv *ssh.Server, conn *gossh.ServerConn, newChan gossh.NewCh
 					// FIXME: force close all channels
 					_ = ch.Close()
 					return
-				}				
+				}
 				sessionConfigs = append([]sessionConfig{{
 					Addr:         currentHost.DialAddr(),
 					ClientConfig: clientConfig,
@@ -222,7 +222,7 @@ func bastionClientConfig(ctx ssh.Context, host *dbmodels.Host) (*gossh.ClientCon
 
 	crypto.HostDecrypt(actx.aesKey, host)
 	if host.SSHKey != nil {
-	  crypto.SSHKeyDecrypt(actx.aesKey, host.SSHKey)
+		crypto.SSHKeyDecrypt(actx.aesKey, host.SSHKey)
 	}
 
 	clientConfig, err := host.ClientConfig(dynamicHostKey(actx.db, host))
