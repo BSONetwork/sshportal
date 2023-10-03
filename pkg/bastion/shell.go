@@ -171,13 +171,15 @@ GLOBAL OPTIONS:
 						if len(acl.HostGroups) == 0 && acl.HostPattern == "" {
 							return fmt.Errorf("an ACL must have at least one host group or hostgroup pattern")
 						}
-						acl.HostPattern = strings.Replace("^"+acl.HostPattern, "*", ".*"+"$", -1)
-						_, patternErr := regexp.Compile(acl.HostPattern)
-						if patternErr != nil {
-							return fmt.Errorf("Error: invalid regexp for hostgroup pattern", acl.HostPattern, patternErr)
-						}
-						if !regexp.MustCompile(`\^[\w-_]+/.*\*.*`).MatchString(acl.HostPattern) {
-							return fmt.Errorf("Error: global wildcards are not allowed, you need to prefix them with a path like [something]/*")
+						if acl.HostPattern != "" {
+							acl.HostPattern = strings.Replace("^"+acl.HostPattern, "*", ".*"+"$", -1)
+							_, patternErr := regexp.Compile(acl.HostPattern)
+							if patternErr != nil {
+								return fmt.Errorf("Error: invalid regexp for hostgroup pattern", acl.HostPattern, patternErr)
+							}
+							if !regexp.MustCompile(`\^[\w-_]+/.*\*.*`).MatchString(acl.HostPattern) {
+								return fmt.Errorf("Error: global wildcards are not allowed, you need to prefix them with a path like [something]/*")
+							}
 						}
 
 						if err := db.Create(&acl).Error; err != nil {
@@ -347,14 +349,16 @@ GLOBAL OPTIONS:
 							if err != nil {
 								return err
 							}
-
-							hostPattern := strings.Replace("^"+c.String("pattern"), "*", ".*"+"$", -1)
-							_, patternErr := regexp.Compile(hostPattern)
-							if patternErr != nil {
-								return fmt.Errorf("Error: invalid regexp for hostgroup pattern", hostPattern, patternErr)
-							}
-							if !regexp.MustCompile(`\^[\w-_]+/.*\*.*`).MatchString(hostPattern) {
-								return fmt.Errorf("Error: global wildcards are not allowed, you need to prefix them with a path like [something]/*")
+							hostPattern := c.String("pattern")
+							if hostPattern != "" {
+								hostPattern = strings.Replace("^"+c.String("pattern"), "*", ".*"+"$", -1)
+								_, patternErr := regexp.Compile(hostPattern)
+								if patternErr != nil {
+									return fmt.Errorf("Error: invalid regexp for hostgroup pattern", hostPattern, patternErr)
+								}
+								if !regexp.MustCompile(`\^[\w-_]+/.*\*.*`).MatchString(hostPattern) {
+									return fmt.Errorf("Error: global wildcards are not allowed, you need to prefix them with a path like [something]/*")
+								}
 							}
 
 							update := dbmodels.ACL{
