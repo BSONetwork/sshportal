@@ -52,15 +52,18 @@ func multiChannelHandler(conn *gossh.ServerConn, newChan gossh.NewChannel, ctx s
 			} else {
 				rconn, err := lastClient.Dial("tcp", config.Addr)
 				if err != nil {
+					lch.Write([]byte(err.Error() + "\n"))
 					return err
 				}
 				ncc, chans, reqs, err := gossh.NewClientConn(rconn, config.Addr, config.ClientConfig)
 				if err != nil {
+					lch.Write([]byte(err.Error() + "\n"))
 					return err
 				}
 				client = gossh.NewClient(ncc, chans, reqs)
 			}
 			if err != nil {
+				lch.Write([]byte(err.Error() + "\n"))
 				lch.Close() // fix #56
 				return err
 			}
@@ -70,6 +73,7 @@ func multiChannelHandler(conn *gossh.ServerConn, newChan gossh.NewChannel, ctx s
 
 		rch, rreqs, err := lastClient.OpenChannel("session", []byte{})
 		if err != nil {
+			lch.Write([]byte(err.Error() + "\n"))
 			return err
 		}
 
