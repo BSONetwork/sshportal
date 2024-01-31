@@ -1426,14 +1426,15 @@ GLOBAL OPTIONS:
 						}
 
 						key, err := crypto.NewSSHKey(c.String("type"), length)
+						if err != nil {
+							return err
+						}
 						if actx.aesKey != "" {
 							if err2 := crypto.SSHKeyEncrypt(actx.aesKey, key); err2 != nil {
 								return err2
 							}
 						}
-						if err != nil {
-							return err
-						}
+
 						key.Name = name
 						key.Comment = c.String("comment")
 
