@@ -24,7 +24,6 @@ import (
 	"github.com/urfave/cli"
 	gossh "golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/terminal" // nolint:staticcheck
-	"gorm.io/gorm"
 	"moul.io/sshportal/pkg/crypto"
 	"moul.io/sshportal/pkg/dbmodels"
 	"moul.io/sshportal/pkg/utils"
@@ -45,7 +44,7 @@ const (
 	naMessage = "n/a"
 )
 
-func shell(s ssh.Session, version, gitSha, gitTag string) error {
+func shell(internalSessID uint, s ssh.Session, version, gitSha, gitTag string) error {
 	var (
 		sshCommand = s.Command()
 		actx       = s.Context().Value(authContextKey).(*authContext)
@@ -92,17 +91,10 @@ GLOBAL OPTIONS:
 		return cli.NewExitError(err.Error(), 1)
 	}
 
-	go func(s ssh.Session, dbConn *gorm.DB, sessionID uint) {
-		for {
-			sess := dbmodels.Session{Model: gorm.Model{ID: sessionID}, Status: string(dbmodels.SessionStatusActive)}
-			if err := dbConn.First(&sess).Error; err != nil || sess.Status != string(dbmodels.SessionStatusActive) {
-				log.Println("Session should be closed", sessionID, "closing connection")
-				s.Close()
-				break
-			}
-			time.Sleep(30 * time.Second) // TODO: VDO: make configurable
-		}
-	}(s, actx.db, sess.ID)
+	if _, ok := ActiveSessions[actx.user.ID]; !ok {
+		ActiveSessions[actx.user.ID] = map[uint]ssh.Session{}
+	}
+	ActiveSessions[actx.user.ID][internalSessID] = s
 
 	app.Commands = []cli.Command{
 		{
@@ -1731,10 +1723,10 @@ GLOBAL OPTIONS:
 					},
 				}, {
 					Name:      "kick",
-					Usage:     "Kills all active sessions for user(s)",
+					Usage:     "Kills all active sessions for user(s) and disables the user",
 					ArgsUsage: "USER...",
 					Flags: []cli.Flag{
-						cli.BoolFlag{Name: "force", Usage: "Allows to ban your own user"},
+						cli.BoolFlag{Name: "force", Usage: "Allows to kick your own user"},
 					},
 					Action: func(c *cli.Context) error {
 						if c.NArg() < 1 {
@@ -1754,55 +1746,14 @@ GLOBAL OPTIONS:
 							if user.Email == myself.Email && !c.Bool("force") {
 								continue
 							}
-							if err := db.Model(&dbmodels.Session{}).Where(&dbmodels.Session{User: user, Status: string(dbmodels.SessionStatusActive)}).Update("status", "closed").Error; err != nil {
+							if err := db.Model(&user).Update("comment", USER_DISABLED).Error; err != nil {
 								return err
 							}
 							log.Println("User", user.Email, "has been kicked by", myself.Email)
 						}
 						return nil
 					},
-				}, {
-					Name:      "ban",
-					Usage:     "Kills all active sessions for user(s), and wipes all his ssh keys",
-					ArgsUsage: "USER...",
-					Flags: []cli.Flag{
-						cli.StringFlag{Name: "override", Usage: "This action is irreversible: approval is required. Input 'I_understand_this_is_irreversible' to continue"},
-						cli.BoolFlag{Name: "force", Usage: "Allows to ban your own user"},
-					},
-					Action: func(c *cli.Context) error {
-						if c.NArg() < 1 {
-							return cli.ShowSubcommandHelp(c)
-						}
-
-						if c.String("override") != "I_understand_this_is_irreversible" {
-							return errors.New("Please set the correct --override flag to proceed")
-						}
-
-						if err := myself.CheckRoles([]string{"admin"}); err != nil {
-							return err
-						}
-
-						var users []*dbmodels.User
-						if err := dbmodels.UsersByIdentifiers(db, c.Args()).Find(&users).Error; err != nil {
-							return err
-						}
-
-						for _, user := range users {
-							if user.Email == myself.Email && !c.Bool("force") {
-								continue
-							}
-
-							if err := db.Where("user_id = ?", user.ID).Delete(&dbmodels.UserKey{}).Error; err != nil {
-								return err
-							}
-							if err := db.Model(&dbmodels.Session{}).Where(&dbmodels.Session{User: user, Status: string(dbmodels.SessionStatusActive)}).Update("status", "closed").Error; err != nil {
-								return err
-							}
-							log.Println("User", user.Email, "has been banned by", myself.Email)
-						}
-						return nil
-					},
-				}, {
+				},{
 					Name:        "invite",
 					ArgsUsage:   "<email>",
 					Usage:       "Invites a new user",
@@ -1942,6 +1893,7 @@ GLOBAL OPTIONS:
 					Flags: []cli.Flag{
 						cli.StringFlag{Name: "name, n", Usage: "Renames the user"},
 						cli.StringFlag{Name: "email, e", Usage: "Updates the email"},
+						cli.StringFlag{Name: "comment, c", Usage: "Updates the comment"},
 						cli.StringFlag{Name: "invite_token, i", Usage: "Updates the invite token"},
 						cli.BoolFlag{Name: "remove_invite, R", Usage: "Remove invite token"},
 						cli.StringSliceFlag{Name: "assign-role, r", Usage: "Assign the user to new `USERROLES`"},
@@ -1976,7 +1928,7 @@ GLOBAL OPTIONS:
 						for _, user := range users {
 							model := tx.Model(user)
 							// simple fields
-							for _, fieldname := range []string{"name", "email", "comment", "invite_token"} {
+							for _, fieldname := range []string{"name", "email", "comment", "invite_token", "comment"} {
 								if c.String(fieldname) != "" {
 									if err := model.Update(fieldname, c.String(fieldname)).Error; err != nil {
 										tx.Rollback()
@@ -2573,6 +2525,7 @@ GLOBAL OPTIONS:
 		StoppedAt: &now,
 	}
 	actx.db.Model(&sess).Updates(&sessUpdate)
+	delete(ActiveSessions[actx.user.ID], sess.ID)
 
 	return nil
 }

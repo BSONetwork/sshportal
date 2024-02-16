@@ -136,6 +136,8 @@ func server(c *serverConfig) (err error) {
 		}
 	}
 
+	go bastion.CleanConnections(db)
+
 	if c.idleTimeout != 0 {
 		srv.IdleTimeout = c.idleTimeout
 		// gliderlabs/ssh requires MaxTimeout to be non-zero if we want to use IdleTimeout.

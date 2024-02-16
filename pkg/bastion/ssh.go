@@ -8,6 +8,7 @@ import (
 	"net"
 	"strings"
 	"time"
+	"math/rand"
 
 	"github.com/gliderlabs/ssh"
 	gossh "golang.org/x/crypto/ssh"
@@ -169,17 +170,12 @@ func ChannelHandler(srv *ssh.Server, conn *gossh.ServerConn, newChan gossh.NewCh
 				_ = ch.Close()
 				return
 			}
-			go func(cnx *gossh.ServerConn, dbConn *gorm.DB, sessionID uint) {
-				for {
-					sess := dbmodels.Session{Model: gorm.Model{ID: sessionID}, Status: string(dbmodels.SessionStatusActive)}
-					if err := dbConn.First(&sess).Error; err != nil || sess.Status != string(dbmodels.SessionStatusActive) {
-						log.Println("Session should be closed", sessionID, "closing connection")
-						conn.Close()
-						break
-					}
-					time.Sleep(30 * time.Second) // TODO: VDO: make configurable
-				}
-			}(conn, actx.db, sess.ID)
+
+			if _, ok := ActiveConnections[actx.user.ID]; !ok {
+				ActiveConnections[actx.user.ID] = map[uint]*gossh.ServerConn{}
+			}
+			ActiveConnections[actx.user.ID][sess.ID] = conn
+
 			go func() {
 				err = multiChannelHandler(conn, newChan, ctx, sessionConfigs, sess.ID)
 				if err != nil {
@@ -196,6 +192,7 @@ func ChannelHandler(srv *ssh.Server, conn *gossh.ServerConn, newChan gossh.NewCh
 					sessUpdate.ErrMsg = ""
 				}
 				actx.db.Model(&sess).Updates(&sessUpdate)
+				delete(ActiveConnections[actx.user.ID], sess.ID)
 			}()
 		case dbmodels.BastionSchemeTelnet:
 			tmpSrv := ssh.Server{
@@ -255,6 +252,7 @@ func bastionClientConfig(ctx ssh.Context, host *dbmodels.Host) (*gossh.ClientCon
 
 func ShellHandler(s ssh.Session, version, gitSha, gitTag string) {
 	actx := s.Context().Value(authContextKey).(*authContext)
+
 	if actx.userType() != userTypeHealthcheck {
 		log.Printf("New connection(shell): sshUser=%q remote=%q local=%q command=%q dbUser=id:%d,email:%s", s.User(), s.RemoteAddr(), s.LocalAddr(), s.Command(), actx.user.ID, actx.user.Email)
 	}
@@ -274,10 +272,12 @@ func ShellHandler(s ssh.Session, version, gitSha, gitTag string) {
 		fmt.Fprintln(s, "OK")
 		return
 	case userTypeShell:
-		if err := shell(s, version, gitSha, gitTag); err != nil {
+		internalSessID := uint(rand.Uint32())
+		if err := shell(internalSessID, s, version, gitSha, gitTag); err != nil {
 			fmt.Fprintf(s, "error: %v\n", err)
 			_ = s.Exit(1)
 		}
+		delete(ActiveSessions[actx.user.ID], internalSessID)
 		return
 	case userTypeInvite:
 		// do nothing (message was printed at the beginning of the function)
@@ -344,6 +344,12 @@ func PublicKeyAuthHandler(db *gorm.DB, logsLocation, aclCheckCmd, aesKey, dbDriv
 		db.Where("authorized_key = ?", string(gossh.MarshalAuthorizedKey(key))).First(&actx.userKey)
 		if actx.userKey.UserID > 0 {
 			db.Preload("Roles").Where("id = ?", actx.userKey.UserID).First(&actx.user)
+
+			if actx.user.Comment == USER_DISABLED {
+				actx.err = fmt.Errorf("This account has been disabled")
+				return false
+			}
+
 			if actx.userType() == userTypeInvite {
 				actx.err = fmt.Errorf("invites are only supported for new SSH keys; your ssh key is already associated with the user %q", actx.user.Email)
 			}
