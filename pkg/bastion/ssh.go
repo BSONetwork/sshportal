@@ -171,10 +171,7 @@ func ChannelHandler(srv *ssh.Server, conn *gossh.ServerConn, newChan gossh.NewCh
 				return
 			}
 
-			if _, ok := ActiveConnections[actx.user.ID]; !ok {
-				ActiveConnections[actx.user.ID] = map[uint]*gossh.ServerConn{}
-			}
-			ActiveConnections[actx.user.ID][sess.ID] = conn
+			CnxManager.AddConnection(actx.user.ID, sess.ID, conn)
 
 			go func() {
 				err = multiChannelHandler(conn, newChan, ctx, sessionConfigs, sess.ID)
@@ -192,7 +189,7 @@ func ChannelHandler(srv *ssh.Server, conn *gossh.ServerConn, newChan gossh.NewCh
 					sessUpdate.ErrMsg = ""
 				}
 				actx.db.Model(&sess).Updates(&sessUpdate)
-				delete(ActiveConnections[actx.user.ID], sess.ID)
+				CnxManager.DelConnection(actx.user.ID, sess.ID)
 			}()
 		case dbmodels.BastionSchemeTelnet:
 			tmpSrv := ssh.Server{
@@ -277,7 +274,7 @@ func ShellHandler(s ssh.Session, version, gitSha, gitTag string) {
 			fmt.Fprintf(s, "error: %v\n", err)
 			_ = s.Exit(1)
 		}
-		delete(ActiveSessions[actx.user.ID], internalSessID)
+		CnxManager.DelSession(actx.user.ID, internalSessID)
 		return
 	case userTypeInvite:
 		// do nothing (message was printed at the beginning of the function)
