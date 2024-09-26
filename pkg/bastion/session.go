@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+	"context"
 
 	"github.com/gliderlabs/ssh"
 	"github.com/pkg/errors"
@@ -50,9 +51,10 @@ func multiChannelHandler(conn *gossh.ServerConn, newChan gossh.NewChannel, ctx s
 			if lastClient == nil {
 				client, err = gossh.Dial("tcp", config.Addr, config.ClientConfig)
 			} else {
-				rconn, err := lastClient.Dial("tcp", config.Addr)
+				dialCtx, _ := context.WithTimeout(context.Background(), 3 * time.Second)
+				rconn, err := lastClient.DialContext(dialCtx, "tcp", config.Addr)
 				if err != nil {
-					lch.Write([]byte(err.Error() + "\n"))
+					lch.Write([]byte("Connection to " + config.Addr + " failed with error: " + err.Error() + "\n"))
 					return err
 				}
 				ncc, chans, reqs, err := gossh.NewClientConn(rconn, config.Addr, config.ClientConfig)

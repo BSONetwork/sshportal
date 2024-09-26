@@ -190,6 +190,7 @@ func ChannelHandler(srv *ssh.Server, conn *gossh.ServerConn, newChan gossh.NewCh
 				}
 				actx.db.Model(&sess).Updates(&sessUpdate)
 				CnxManager.DelConnection(actx.user.ID, sess.ID)
+				conn.Close()
 			}()
 		case dbmodels.BastionSchemeTelnet:
 			tmpSrv := ssh.Server{
