@@ -25,6 +25,7 @@ const (
 	authAgentChannelRFC     = "auth-agent"
 	x11ReqRFC               = "x11-req"
 	x11ChannelRFC           = "x11"
+	multiHopCnxTimeout      = 10 * time.Second // TODO: VDO: make configurable
 )
 
 type sessionConfig struct {
@@ -51,7 +52,7 @@ func multiChannelHandler(conn *gossh.ServerConn, newChan gossh.NewChannel, ctx s
 			if lastClient == nil {
 				client, err = gossh.Dial("tcp", config.Addr, config.ClientConfig)
 			} else {
-				dialCtx, _ := context.WithTimeout(context.Background(), 3 * time.Second)
+				dialCtx, _ := context.WithTimeout(context.Background(), multiHopCnxTimeout)
 				rconn, err := lastClient.DialContext(dialCtx, "tcp", config.Addr)
 				if err != nil {
 					lch.Write([]byte("Connection to " + config.Addr + " failed with error: " + err.Error() + "\n"))
