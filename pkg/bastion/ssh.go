@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 	"math/rand"
+	"sync"
 
 	"github.com/gliderlabs/ssh"
 	gossh "golang.org/x/crypto/ssh"
@@ -20,6 +21,8 @@ import (
 type sshportalContextKey string
 
 var authContextKey = sshportalContextKey("auth")
+
+const DIRECT_TCP_KEEPALIVE_DURATION = 120 * time.Second
 
 type authContext struct {
 	message         string
@@ -76,10 +79,76 @@ func dynamicHostKey(db *gorm.DB, host *dbmodels.Host) gossh.HostKeyCallback {
 
 var DefaultChannelHandler ssh.ChannelHandler = func(srv *ssh.Server, conn *gossh.ServerConn, newChan gossh.NewChannel, ctx ssh.Context) {}
 
+type DirectTCPCnx struct {
+	Conn *gossh.ServerConn
+	Ctx ssh.Context
+	SessionConfigs []sessionConfig
+	LastUsed time.Time
+}
+
+type DirectTCPCnxManager struct {
+	sync.RWMutex
+	Connections map[string]*DirectTCPCnx
+}
+
+func (d *DirectTCPCnxManager) GetAndUpdate(hash string) *DirectTCPCnx {
+	d.Lock()
+	defer d.Unlock()
+	if cnx, ok := d.Connections[hash]; ok {
+		cnx.LastUsed = time.Now()
+		return cnx
+	}
+	return nil
+}
+
+func (d *DirectTCPCnxManager) Add(hash string, cnx *DirectTCPCnx) {
+	d.Lock()
+	d.Connections[hash] = cnx
+	d.Unlock()
+}
+
+func newDirectTCPCnxManager() DirectTCPCnxManager {
+	manager := DirectTCPCnxManager{
+		Connections: map[string]*DirectTCPCnx{},
+	}
+	go func(d *DirectTCPCnxManager) {
+		for {
+			d.Lock()
+			for h, cnx := range d.Connections {
+				if time.Since(cnx.LastUsed) > DIRECT_TCP_KEEPALIVE_DURATION {
+					delete(d.Connections, h)
+				}
+			}
+			d.Unlock()
+			time.Sleep(DIRECT_TCP_KEEPALIVE_DURATION)
+		}
+	}(&manager)
+	return manager
+}
+
+var directTCPManager = newDirectTCPCnxManager()
+
+func hashTCPCnx(parts ...interface{}) string {
+	result := ""
+	for _, p := range parts {
+		result += fmt.Sprintf("%q/", p)
+	}
+	return result
+}
+
 func ChannelHandler(srv *ssh.Server, conn *gossh.ServerConn, newChan gossh.NewChannel, ctx ssh.Context) {
+	actx := ctx.Value(authContextKey).(*authContext)
+	hashed := hashTCPCnx(conn.User(), conn.RemoteAddr(), conn.LocalAddr(), actx.user.ID, actx.user.Email)
+
 	switch newChan.ChannelType() {
 	case "session":
 	case "direct-tcpip":
+		if v := directTCPManager.GetAndUpdate(hashed); v != nil {
+			if err := multiChannelHandler(v.Conn, newChan, v.Ctx, v.SessionConfigs, 0); err != nil {
+				log.Println("Error on direct-tcpip session", conn.User(), actx.user.Email)
+			}
+			return
+		}
 	default:
 		// TODO: handle direct-tcp (only for ssh scheme)
 		if err := newChan.Reject(gossh.UnknownChannelType, "unsupported channel type"); err != nil {
@@ -87,9 +156,6 @@ func ChannelHandler(srv *ssh.Server, conn *gossh.ServerConn, newChan gossh.NewCh
 		}
 		return
 	}
-
-	actx := ctx.Value(authContextKey).(*authContext)
-
 	if actx.user.ID == 0 && actx.userType() != userTypeHealthcheck {
 		ip, err := net.ResolveTCPAddr(conn.RemoteAddr().Network(), conn.RemoteAddr().String())
 		if err == nil {
@@ -161,6 +227,7 @@ func ChannelHandler(srv *ssh.Server, conn *gossh.ServerConn, newChan gossh.NewCh
 				HostID: host.ID,
 				Status: string(dbmodels.SessionStatusActive),
 			}
+
 			if err = actx.db.Create(&sess).Error; err != nil {
 				ch, _, err2 := newChan.Accept()
 				if err2 != nil {
@@ -172,6 +239,19 @@ func ChannelHandler(srv *ssh.Server, conn *gossh.ServerConn, newChan gossh.NewCh
 			}
 
 			CnxManager.AddConnection(actx.user.ID, sess.ID, conn)
+
+			if newChan.ChannelType() == "direct-tcpip" {
+				directTCPManager.Add(hashed, &DirectTCPCnx{
+					Ctx: ctx,
+					Conn: conn,
+					SessionConfigs: sessionConfigs,
+					LastUsed: time.Now(),
+				})
+				if err := multiChannelHandler(conn, newChan, ctx, sessionConfigs, 0); err != nil {
+					log.Println("Error on direct-tcpip session", conn.User(), actx.user.Email)
+				}
+				return
+			}
 
 			go func() {
 				err = multiChannelHandler(conn, newChan, ctx, sessionConfigs, sess.ID)
