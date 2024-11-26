@@ -149,7 +149,7 @@ func pipe(serverConn *gossh.ServerConn, client *gossh.Client, lreqs, rreqs <-cha
 	channeltype := newChan.ChannelType()
 
 	var logWriter io.WriteCloser = newDiscardWriteCloser()
-	if sessConfig.LoggingMode != "disabled" {
+	if sessConfig.LoggingMode != "disabled" && channeltype != "direct-tcpip" {
 		filename := filepath.Join(sessConfig.LogsLocation, fmt.Sprintf("%s-%s-%s-%d-%s", user, username, channeltype, sessionID, time.Now().Format(time.RFC3339)))
 		f, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0440)
 		if err != nil {
