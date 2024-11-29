@@ -994,6 +994,38 @@ GLOBAL OPTIONS:
 						return nil
 					},
 				}, {
+					Name:      "reset",
+					Usage:     "Resets the host key of one of multiple hosts",
+					ArgsUsage: "HOST...",
+					Action: func(c *cli.Context) error {
+						if c.NArg() < 1 {
+							return cli.ShowSubcommandHelp(c)
+						}
+
+						var hosts []*dbmodels.Host
+						if err := dbmodels.HostsByIdentifiers(db, c.Args()).Preload("Groups").Preload("Groups.ACLs").Find(&hosts).Error; err != nil {
+							return err
+						}
+
+						tx := db.Begin()
+						for _, host := range hosts {
+							isAdmin := myself.CheckRoles([]string{"admin"}) == nil
+							isOperator := myself.CheckRoles([]string{"operator"}) == nil && checkACLs(*myself, host, host.Groups, "") == string(dbmodels.ACLActionAllow)
+
+							if !isAdmin && !isOperator {
+								tx.Rollback()
+								return fmt.Errorf("You do not have permissions to run this command on host %s", host.Name)
+							}
+
+							if err := tx.Model(&host).Update("HostKey", []byte{}).Error; err != nil {
+								tx.Rollback()
+								return err
+							}
+						}
+
+						return tx.Commit().Error
+					},
+				}, {
 					Name:      "rm",
 					Usage:     "Removes one or more hosts",
 					ArgsUsage: "HOST...",
@@ -1750,7 +1782,7 @@ GLOBAL OPTIONS:
 						}
 						return nil
 					},
-				},{
+				}, {
 					Name:        "invite",
 					ArgsUsage:   "<email>",
 					Usage:       "Invites a new user",
