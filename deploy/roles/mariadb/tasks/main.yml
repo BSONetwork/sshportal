@@ -1,0 +1,147 @@
+---
+- name: Add static DNS entries for all hosts
+  lineinfile:
+    dest: /etc/hosts
+    line: "{{ hostvars[item].ansible_host }} {{ hostvars[item].inventory_hostname }}"
+    state: present
+  with_items: "{{ groups['db'] }}"
+
+# tasks file for mariadb
+- name: Ensure mariadb is installed
+  ansible.builtin.apt:
+    name:
+      - mariadb-server
+      - python3-pymysql
+    state: present
+    cache_valid_time: 3600
+
+- name: Provision mysql global configuration
+  copy:
+    src: "../files/my.cnf"
+    dest: "/etc/mysql/my.cnf"
+    mode: "0440"
+    owner: mysql
+    group: mysql
+  notify: restart mariadb
+
+- name: Provision mysql custom configuration
+  template:
+    src: "../templates/mysql.cnf.j2"
+    dest: "/etc/mysql/conf.d/mysql.cnf"
+    mode: "0440"
+    owner: mysql
+    group: mysql
+  notify: restart mariadb
+
+- name: Restart mariadb on config change
+  meta: flush_handlers
+
+- name: "Secure Install: Set ~/.my.cnf file"
+  template:
+    src: "../templates/dotmy.cnf.j2"
+    dest: "/root/.my.cnf"
+    mode: "0600"
+  no_log: true
+
+- name: "Secure Install: Update MariaDB root password"
+  community.mysql.mysql_user:
+    login_unix_socket: "/var/run/mysqld/mysqld.sock"
+    login_password: "{{ mysql_root_password }}"
+    name: "root"
+    host: "{{ item }}"
+    password: "{{ mysql_root_password }}"
+  with_items:
+   - localhost
+   - 127.0.0.1
+   - ::1
+  when: initdb | d(false)
+
+- name: "Secure Install: Delete anonymous MySQL user"
+  community.mysql.mysql_user:
+    login_unix_socket: "/var/run/mysqld/mysqld.sock"
+    name: ""
+    host: "{{ item }}"
+    state: absent
+  with_items:
+   - localhost
+   - "{{ ansible_nodename }}"
+  when: initdb | d(false)
+
+- name: "Secure Install: Delete Hostname based MySQL user"
+  community.mysql.mysql_user:
+    login_unix_socket: "/var/run/mysqld/mysqld.sock"
+    name: root
+    host: "{{ ansible_nodename }}"
+    state: absent
+  when: initdb | d(false)
+
+- name: "Secure Install: Remove MySQL test database"
+  community.mysql.mysql_db:
+    login_unix_socket: "/var/run/mysqld/mysqld.sock"
+    name: test
+    state: absent
+  when: initdb | d(false)
+
+- name: provision replication user in database
+  community.mysql.mysql_user:
+    login_unix_socket: "/var/run/mysqld/mysqld.sock"
+    name: "{{ mariadb_replication_user }}"
+    password: "{{ mariadb_replication_password }}"
+    host: "%"
+    priv: "*.*:REPLICATION CLIENT,REPLICATION SLAVE"
+  when:
+  - initdb | d(false)
+  - mariadb_replication_enabled | d(false)
+  
+- name: Stop MariaDB replica
+  community.mysql.mysql_replication:
+    login_unix_socket: "/var/run/mysqld/mysqld.sock"
+    mode: stopreplica
+  when:
+  - initdb | d(false)
+  - mariadb_replication_enabled | d(false)
+
+- name: Reset replication binlog
+  community.mysql.mysql_replication:
+    login_unix_socket: "/var/run/mysqld/mysqld.sock"
+    mode: resetprimary
+  when:
+  - initdb | d(false)
+  - mariadb_replication_enabled | d(false)
+
+- name: Get primary binlog file name and binlog position
+  community.mysql.mysql_replication:
+    login_unix_socket: "/var/run/mysqld/mysqld.sock"
+    mode: getprimary
+  register: primary
+  when:
+  - initdb | d(false)
+  - mariadb_replication_enabled | d(false)
+
+- name: Change replication primary
+  community.mysql.mysql_replication:
+    login_unix_socket: "/var/run/mysqld/mysqld.sock"
+    mode: changeprimary
+    primary_host: "{{ groups['db'] | difference([inventory_hostname]) | first }}"
+    primary_use_gtid: disabled
+    primary_log_file: "{{ hostvars[groups['db'] | difference([inventory_hostname]) | first].primary.File }}"
+    primary_log_pos: "{{ hostvars[groups['db'] | difference([inventory_hostname]) | first].primary.Position }}"
+    primary_user: "{{ mariadb_replication_user }}"
+    primary_password: "{{ mariadb_replication_password }}"
+  when:
+  - initdb | d(false)
+  - mariadb_replication_enabled | d(false)
+
+- name: Start MariaDB replica
+  community.mysql.mysql_replication:
+    login_unix_socket: "/var/run/mysqld/mysqld.sock"
+    mode: startreplica
+  when:
+  - initdb | d(false)
+  - mariadb_replication_enabled | d(false)
+
+- name: Ensure service is started and enabled
+  ansible.builtin.systemd:
+    name: mariadb
+    state: started
+    enabled: true

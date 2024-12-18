@@ -1,0 +1,10 @@
+---
+# defaults file for mariadb
+mysql_root_password: ""
+mariadb_server_id: 1
+mariadb_incr_offset: 0
+mariadb_domain_id: 0
+mariadb_buffer_pool_size: 256M
+mariadb_bind_address: "{{ ansible_host }}"
+mariadb_replication_user: repli
+mariadb_replication_password: ""

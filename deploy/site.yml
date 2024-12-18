@@ -1,0 +1,43 @@
+---
+- name: setup mariadb
+  gather_facts: true
+  any_errors_fatal: true
+  hosts: db
+  tags:
+    - mariadb
+    - db
+  roles:
+    - mariadb
+    
+- name: prepare user and database for sshportal
+  hosts: "db[0]"
+  tags:
+    - mariadb
+  tasks:
+    - name: Ensure sshportal database exists
+      community.mysql.mysql_db:
+        login_unix_socket: "/var/run/mysqld/mysqld.sock"
+        name: "{{ sshportal_db_name | d('sshportal') }}"
+        state: present
+      
+    - name: provision sshportal user in database
+      community.mysql.mysql_user:
+        login_unix_socket: "/var/run/mysqld/mysqld.sock"
+        name: "{{ sshportal_db_user | d('sshportal') }}"
+        password: "{{ vault_sshportal_db_password }}"
+        host: "%"
+        priv: "{{ sshportal_db_name | d('sshportal') }}.*:ALL,GRANT"
+      no_log: true
+    
+- name: setup sshportal
+  gather_facts: true
+  any_errors_fatal: true
+  hosts: sshportal
+  tags:
+    - sshportal
+  roles:
+    - sshportal
+  vars:
+    sshportal_aes_key: "{{ vault_sshportal_aes_key }}"
+    sshportal_db_password: "{{ vault_sshportal_db_password }}"
+
