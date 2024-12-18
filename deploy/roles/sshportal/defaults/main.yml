@@ -1,0 +1,8 @@
+---
+sshportal_logs_location: "/var/log/sshportal"
+sshportal_aes_key: ""
+sshportal_bind_address: "localhost"
+sshportal_bind_port: "22"
+sshportal_db_password: ""
+sshportal_db_user: sshportal
+sshportal_db_name: sshportal

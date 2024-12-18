@@ -1,0 +1,6 @@
+SSHPORTAL_ARGS=""
+SSHPORTAL_BIND="{{ sshportal_bind_address }}:{{ sshportal_bind_port }}"
+SSHPORTAL_DB_DRIVER="mysql"
+SSHPORTAL_DATABASE_URL="{{ sshportal_db_user }}:{{ sshportal_db_password }}@tcp({{ sshportal_db_host }}:3306)/{{ sshportal_db_name }}?parseTime=true"
+SSHPORTAL_LOGS_LOCATION="{{ sshportal_logs_location }}"
+SSHPORTAL_AES_KEY="{{ sshportal_aes_key }}"

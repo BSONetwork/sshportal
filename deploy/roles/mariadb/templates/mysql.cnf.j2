@@ -1,0 +1,77 @@
+[mysqld]
+user=mysql
+datadir=/var/lib/mysql
+socket=/var/run/mysqld/mysqld.sock
+log-error=/var/log/mysql/error.log
+pid-file=/var/run/mysqld/mysqld.pid
+bind-address={{ mariadb_bind_address }}
+port=3306
+binlog_format=ROW
+
+{% if mariadb_replication_enabled | d(false) %}
+# Replication
+server_id = {{ mariadb_server_id }}
+report_host = {{ inventory_hostname }}
+gtid-domain-id = {{ mariadb_domain_id }}
+log_bin = /var/lib/mysql/mariadb-bin
+log_bin_index = /var/lib/mysql/mariadb-bin.index
+relay_log = /var/lib/mysql/relay-bin
+relay_log_index = /var/lib/mysql/relay-bin.index
+auto_increment_increment=2
+auto_increment_offset={{ mariadb_incr_offset }}
+slave-skip-errors=1007,1008,1050,1051,1054,1060,1061,1062,1068,1094,1146
+{% endif %}
+
+# InnoDB tuning
+default-storage-engine=innodb
+innodb_autoinc_lock_mode=2
+innodb_file_per_table = 1
+innodb_buffer_pool_size = {{ mariadb_buffer_pool_size }}
+innodb_thread_concurrency = 0
+innodb_log_buffer_size = 32M
+innodb_open_files = 16384
+innodb_log_file_size = 64M
+innodb_flush_method=O_DIRECT
+innodb_io_capacity = 400
+innodb_read_io_threads = 48
+innodb_write_io_threads = 8
+innodb_buffer_pool_instances = 48
+innodb_flush_log_at_trx_commit = 2
+innodb_lock_wait_timeout = 50
+innodb_max_dirty_pages_pct = 75
+innodb_doublewrite=OFF
+
+# Generic tuning
+transaction-isolation = READ-COMMITTED
+query_cache_type = 0
+query_cache_size = 128M
+query_cache_limit = 64M
+thread_cache_size = 256
+key_buffer_size = 256M
+table_cache = 4096
+table_definition_cache = 2048
+table_open_cache = 4096
+tmp_table_size = 64M
+max_allowed_packet = 150M
+read_buffer_size = 2M
+skip-name-resolve
+max_heap_table_size = 64M
+join_buffer_size = 64M
+max_connections = 512
+max_user_connections = 128
+sync_binlog=0
+open_files_limit = 128000
+wait_timeout = 7200
+
+
+# log perf
+#slow-query-log = 1
+#slow-query-log-file = /var/log/mysql/mysql-slow.log
+#long_query_time = 5
+#log-queries-not-using-indexes=0
+
+[mysqld_safe]
+skip_log_error
+syslog
+
+[mariadb]

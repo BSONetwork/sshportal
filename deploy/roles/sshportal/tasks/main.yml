@@ -1,0 +1,67 @@
+---
+# tasks file for sshportal
+- name: Check that the required variables are defined
+  fail:
+    msg: "Required variable {{ item.name }}{% if item.path is defined %}.{{item.path}}{% endif %} is not defined"
+  when: ((lookup('vars', item.name) | json_query(item.path)) if item.path is defined else lookup('vars', item.name)) == ''
+  with_items:
+    - name: sshportal_db_user
+    - name: sshportal_db_password
+    - name: sshportal_db_host
+    - name: sshportal_db_name
+
+- name: download signing key
+  ansible.builtin.get_url:
+    url: https://pkg.bso.s3.eu-west-1.bso.st/bso.asc
+    dest: "/etc/apt/trusted.gpg.d/bso.asc"
+
+- name: add repository
+  ansible.builtin.apt_repository:
+    repo: "deb [arch=amd64 signed-by=/etc/apt/trusted.gpg.d/bso.asc] https://pkg.bso.s3.eu-west-1.bso.st stable main"
+    state: present
+
+- name: Ensure sshportal group
+  ansible.builtin.group:
+    name: sshportal
+
+- name: Ensure sshportal user
+  ansible.builtin.user:
+    name: sshportal
+    groups: sshportal
+    shell: /bin/false
+
+- name: Ensure sshportal is installed
+  ansible.builtin.apt:
+    name: sshportal
+    state: present
+    cache_valid_time: 3600
+
+- name: ensure log location
+  ansible.builtin.file:
+    name: "{{ sshportal_logs_location }}"
+    state: directory
+    owner: sshportal
+    group: sshportal
+    mode: "0700"
+
+- name: "add capability to bind to port lower that 1024"
+  community.general.capabilities:
+    path: /usr/bin/sshportal
+    capability: cap_net_bind_service=+ep
+    state: present
+
+- name: provision sshportal configuration
+  template:
+    src: "sshportal.defaults"
+    dest: "/etc/default/sshportal"
+    owner: sshportal
+    group: sshportal
+    mode: "0400"
+  register: conf
+  notify: restart sshportal
+  
+- name: ensure service is started and enabled
+  service:
+    name: sshportal
+    state: started
+    enabled: true
