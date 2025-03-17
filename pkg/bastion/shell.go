@@ -925,7 +925,7 @@ GLOBAL OPTIONS:
 						var hosts []*dbmodels.Host
 						query := db.Order("created_at desc").Preload("Groups").Preload("Groups.ACLs")
 						if c.String("filter") != "" {
-							query = db.Where("lower(comment) LIKE ?", "%"+strings.ToLower(c.String("filter"))+"%").Order("created_at desc").Preload("Groups").Preload("Groups.ACLs")
+							query = db.Where("lower(comment) LIKE ? OR lower(name) LIKE ?", "%"+strings.ToLower(c.String("filter"))+"%", "%"+strings.ToLower(c.String("filter"))+"%").Order("created_at desc").Preload("Groups").Preload("Groups.ACLs")
 						}
 						if c.Bool("latest") {
 							var host dbmodels.Host
