@@ -1,72 +1,41 @@
 package main
 
 import (
-  "io"
-  "crypto/cipher"
-  "crypto/aes"
-  "errors"
+  "flag"
   "os"
+  "log"
+  crypto "moul.io/sshportal/pkg/crypto"
 )
 
-type StreamDecrypter struct {
-  Block cipher.Block
-  Stream cipher.Stream
-}
-
-func NewStreamDecrypter(key []byte) *StreamDecrypter {
-  c, err := aes.NewCipher(key)
-  if err != nil {
-    panic(err)
-  }
-  return &StreamDecrypter{
-    Block: c,
-    Stream: nil,
-  }
-}
-
-func (sd *StreamDecrypter) Decrypt(f io.Reader) ([]byte, error) {
-  res := []byte{}
-  bs := sd.Block.BlockSize()
-  iv := make([]byte, bs)
-  if _, err := io.ReadFull(f, iv); err != nil {
-    return res, err
-  }
-  
-  sd.Stream = cipher.NewCFBDecrypter(sd.Block, iv)
-  for {
-    buf := make([]byte, bs)
-    out := make([]byte, bs)
-    _, err := io.ReadFull(f, buf)
-    if err != nil {
-      if errors.Is(err, io.EOF) {
-        return res, nil
-      }
-      return res, err
-    }
-    sd.Stream.XORKeyStream(out, buf)
-    res = append(res, out...)
-  }
-}
-
 func usage(cmd string) {
-  os.Stderr.WriteString("Usage: " + cmd + " [aes_key] < file_to_decrypt\n")
+  os.Stderr.WriteString("Usage: " + cmd + " < file_to_decrypt\n")
 }
 
 func main() {
-  if len(os.Args) != 2 {
-    usage(os.Args[0])
-    return
+  fs := flag.NewFlagSet("decrypt", flag.ExitOnError)
+
+	useV1 := fs.Bool("legacy", false, "Decrypt a legacy stream")
+  key := fs.String("key", "", "AES Key to decrypt with")
+
+  if err := fs.Parse(os.Args[1:]); err != nil {
+    log.Fatalln("Failed to parse args", err)
   }
-  key := []byte(os.Args[1])
-  if len(key) != 8 && len(key) != 16 && len(key) != 24 && len(key) != 32 {
+
+  keyBytes := []byte(*key)
+
+  if len(keyBytes) != 8 && len(keyBytes) != 16 && len(keyBytes) != 24 && len(keyBytes) != 32 {
     os.Stderr.WriteString("Invalid key size\n")
     usage(os.Args[0])
     return
   }
-  sd := NewStreamDecrypter(key)
-  out, err := sd.Decrypt(os.Stdin)
-  if err != nil {
-    panic(err)
+  if *useV1 {
+    sd := crypto.NewStreamEncrypter(os.Stdout, keyBytes)
+    out, err := sd.Decrypt(os.Stdin)
+    if err != nil {
+      log.Fatalln("Failed to parse args", err)
+    }
+    os.Stdout.Write(out)
+  } else {
+    crypto.DecryptStreamV2(os.Stdout, keyBytes)
   }
-  os.Stdout.Write(out)
 }

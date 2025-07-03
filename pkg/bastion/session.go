@@ -159,9 +159,14 @@ func pipe(serverConn *gossh.ServerConn, client *gossh.Client, lreqs, rreqs <-cha
 			_ = f.Close()
 		}()
 		if aesKey != "" {
-			log.Printf("Encrypted Session %v is recorded in %v", channeltype, filename)
-			ec := crypto.NewStreamEncrypter(f, []byte(aesKey))
-			logWriter = ec
+			ec, err := crypto.EncryptStreamV2(f, []byte(aesKey))
+			if err != nil {
+				log.Println("Failed to set up stream encryption; falling back to plain file.", err)
+				logWriter = f
+			} else {
+				log.Printf("Encrypted Session %v is recorded in %v", channeltype, filename)
+				logWriter = ec
+			}
 		} else {
 			log.Printf("Plain Session %v is recorded in %v", channeltype, filename)
 			logWriter = f
