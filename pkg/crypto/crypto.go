@@ -292,21 +292,15 @@ func (ew *StreamEncrypter) Write(b []byte) (int, error) {
 
 func (ew *StreamEncrypter) Close() error { return nil }
 
-func (ew *StreamEncrypter) Decrypt(path string) ([]byte, error) {
+func (sd *StreamEncrypter) Decrypt(f io.Reader) ([]byte, error) {
   res := []byte{}
-  f, err := os.Open(path)
-  if err != nil {
-    return res, err
-  }
-  defer f.Close()
-  bs := ew.Block.BlockSize()
-  
+  bs := sd.Block.BlockSize()
   iv := make([]byte, bs)
   if _, err := io.ReadFull(f, iv); err != nil {
     return res, err
   }
-  
-  ew.Stream = cipher.NewCFBDecrypter(ew.Block, iv)
+
+  sd.Stream = cipher.NewCFBDecrypter(sd.Block, iv)
   for {
     buf := make([]byte, bs)
     out := make([]byte, bs)
@@ -317,7 +311,55 @@ func (ew *StreamEncrypter) Decrypt(path string) ([]byte, error) {
       }
       return res, err
     }
-    ew.Stream.XORKeyStream(out, buf)
+    sd.Stream.XORKeyStream(out, buf)
     res = append(res, out...)
   }
+}
+
+func EncryptStreamV2(w io.Writer, key []byte) (io.WriteCloser, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+
+	iv := make([]byte, aes.BlockSize)
+	if _, err := rand.Read(iv); err != nil {
+		return nil, err
+	}
+
+	if _, err := w.Write(iv); err != nil {
+		return nil, err
+	}
+
+	stream := cipher.NewCTR(block, iv)
+	streamWriter := &cipher.StreamWriter{
+		S: stream,
+		W: w,
+	}
+
+	return streamWriter, nil
+}
+
+func DecryptStreamV2(w io.Writer, key []byte) error {
+	iv := make([]byte, aes.BlockSize)
+	if _, err := io.ReadFull(os.Stdin, iv); err != nil {
+		return fmt.Errorf("failed to read IV: %w", err)
+	}
+
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return fmt.Errorf("invalid AES key: %w", err)
+	}
+
+	stream := cipher.NewCTR(block, iv)
+	streamReader := &cipher.StreamReader{
+		S: stream,
+		R: os.Stdin,
+	}
+
+	if _, err := io.Copy(w, streamReader); err != nil {
+		return fmt.Errorf("decryption failed: %w", err)
+	}
+
+	return nil
 }
