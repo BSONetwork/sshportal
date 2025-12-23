@@ -912,7 +912,7 @@ GLOBAL OPTIONS:
 					Flags: []cli.Flag{
 						cli.BoolFlag{Name: "latest, l", Usage: "Show the latest host"},
 						cli.BoolFlag{Name: "quiet, q", Usage: "Only display IDs"},
-						cli.StringFlag{Name: "filter, f", Usage: "Filter by comment"},
+						cli.StringFlag{Name: "filter, f", Usage: "Filter by comment, hostname, IP"},
 					},
 					Action: func(c *cli.Context) error {
 						isAdmin := myself.CheckRoles([]string{"admin"}) == nil
@@ -925,7 +925,10 @@ GLOBAL OPTIONS:
 						var hosts []*dbmodels.Host
 						query := db.Order("created_at desc").Preload("Groups").Preload("Groups.ACLs")
 						if c.String("filter") != "" {
-							query = db.Where("lower(comment) LIKE ? OR lower(name) LIKE ?", "%"+strings.ToLower(c.String("filter"))+"%", "%"+strings.ToLower(c.String("filter"))+"%").Order("created_at desc").Preload("Groups").Preload("Groups.ACLs")
+							filterStr := strings.ToLower(c.String("filter"))
+							fName := "%" + filterStr + "%"
+							fURL := "%@%" + filterStr + "%"
+							query = db.Where("lower(comment) LIKE ? OR lower(name) LIKE ? OR url LIKE ?", fName, fName, fURL).Order("created_at desc").Preload("Groups").Preload("Groups.ACLs")
 						}
 						if c.Bool("latest") {
 							var host dbmodels.Host
