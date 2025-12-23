@@ -21,6 +21,8 @@ import (
 	"github.com/gliderlabs/ssh"
 	"github.com/mgutz/ansi"
 	"github.com/olekukonko/tablewriter"
+	"github.com/olekukonko/tablewriter/tw"
+	"github.com/olekukonko/tablewriter/renderer"
 	"github.com/urfave/cli"
 	gossh "golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/terminal" // nolint:staticcheck
@@ -228,10 +230,13 @@ GLOBAL OPTIONS:
 							return nil
 						}
 
-						table := tablewriter.NewWriter(s)
-						table.SetHeader([]string{"ID", "Weight", "User groups", "Host groups", "Group wildcard", "Action", "Inception", "Expiration", "Updated", "Created", "Comment"})
-						table.SetBorder(false)
-						table.SetCaption(true, fmt.Sprintf("Total: %d ACLs.", len(acls)))
+						table := tablewriter.NewTable(s,
+							tablewriter.WithRenderer(renderer.NewBlueprint(tw.Rendition{
+								Borders: tw.BorderNone,
+							})),
+						)
+						table.Header([]string{"ID", "Weight", "User groups", "Host groups", "Group wildcard", "Action", "Inception", "Expiration", "Updated", "Created", "Comment"})
+						table.Caption(tw.Caption{Text: fmt.Sprintf("Total: %d ACLs.", len(acls))})
 						for _, acl := range acls {
 							userGroups := []string{}
 							hostGroups := []string{}
@@ -741,10 +746,13 @@ GLOBAL OPTIONS:
 							return nil
 						}
 
-						table := tablewriter.NewWriter(s)
-						table.SetHeader([]string{"ID", "Author", "Domain", "Action", "Entity", "Args", "Date"})
-						table.SetBorder(false)
-						table.SetCaption(true, fmt.Sprintf("Total: %d events.", len(events)))
+						table := tablewriter.NewTable(s,
+							tablewriter.WithRenderer(renderer.NewBlueprint(tw.Rendition{
+								Borders: tw.BorderNone,
+							})),
+						)
+						table.Header([]string{"ID", "Author", "Domain", "Action", "Entity", "Args", "Date"})
+						table.Caption(tw.Caption{Text: fmt.Sprintf("Total: %d events.", len(events))})
 						for _, event := range events {
 							author := ""
 							if event.Author != nil {
@@ -947,9 +955,12 @@ GLOBAL OPTIONS:
 							return nil
 						}
 
-						table := tablewriter.NewWriter(s)
-						table.SetHeader([]string{"ID", "Name", "URL", "Key", "Groups", "Updated", "Created", "Comment", "Hop", "Logging"})
-						table.SetBorder(false)
+						table := tablewriter.NewTable(s,
+							tablewriter.WithRenderer(renderer.NewBlueprint(tw.Rendition{
+								Borders: tw.BorderNone,
+							})),
+						)
+						table.Header([]string{"ID", "Name", "URL", "Key", "Groups", "Updated", "Created", "Comment", "Hop", "Logging"})
 						shown := 0
 						for _, host := range hosts {
 							if !isAdmin && checkACLs(tmpUser, host, host.Groups, "") != string(dbmodels.ACLActionAllow) {
@@ -992,7 +1003,7 @@ GLOBAL OPTIONS:
 								//FIXME: add some stats about last access time etc
 							})
 						}
-						table.SetCaption(true, fmt.Sprintf("Total: %d hosts.", shown))
+						table.Caption(tw.Caption{Text: fmt.Sprintf("Total: %d hosts.", shown)})
 						table.Render()
 						return nil
 					},
@@ -1292,10 +1303,13 @@ GLOBAL OPTIONS:
 							return nil
 						}
 
-						table := tablewriter.NewWriter(s)
-						table.SetHeader([]string{"ID", "Name", "Hosts", "ACLs", "Updated", "Created", "Comment"})
-						table.SetBorder(false)
-						table.SetCaption(true, fmt.Sprintf("Total: %d host groups.", len(hostGroups)))
+						table := tablewriter.NewTable(s,
+							tablewriter.WithRenderer(renderer.NewBlueprint(tw.Rendition{
+								Borders: tw.BorderNone,
+							})),
+						)
+						table.Header([]string{"ID", "Name", "Hosts", "ACLs", "Updated", "Created", "Comment"})
+						table.Caption(tw.Caption{Text: fmt.Sprintf("Total: %d host groups.", len(hostGroups))})
 						for _, hostGroup := range hostGroups {
 							// FIXME: add more stats (amount of hosts, linked usergroups, ...)
 							table.Append([]string{
@@ -1598,10 +1612,13 @@ GLOBAL OPTIONS:
 							return nil
 						}
 
-						table := tablewriter.NewWriter(s)
-						table.SetHeader([]string{"ID", "Name", "Type", "Length", "Hosts", "Updated", "Created", "Comment"})
-						table.SetBorder(false)
-						table.SetCaption(true, fmt.Sprintf("Total: %d keys.", len(sshKeys)))
+						table := tablewriter.NewTable(s,
+							tablewriter.WithRenderer(renderer.NewBlueprint(tw.Rendition{
+								Borders: tw.BorderNone,
+							})),
+						)
+						table.Header([]string{"ID", "Name", "Type", "Length", "Hosts", "Updated", "Created", "Comment"})
+						table.Caption(tw.Caption{Text: fmt.Sprintf("Total: %d keys.", len(sshKeys))})
 						for _, key := range sshKeys {
 							table.Append([]string{
 								fmt.Sprintf("%d", key.ID),
@@ -1875,10 +1892,13 @@ GLOBAL OPTIONS:
 							return nil
 						}
 
-						table := tablewriter.NewWriter(s)
-						table.SetHeader([]string{"ID", "Name", "Email", "Roles", "Keys", "Groups", "Updated", "Created", "Comment"})
-						table.SetBorder(false)
-						table.SetCaption(true, fmt.Sprintf("Total: %d users.", len(users)))
+						table := tablewriter.NewTable(s,
+							tablewriter.WithRenderer(renderer.NewBlueprint(tw.Rendition{
+								Borders: tw.BorderNone,
+							})),
+						)
+						table.Header([]string{"ID", "Name", "Email", "Roles", "Keys", "Groups", "Updated", "Created", "Comment"})
+						table.Caption(tw.Caption{Text: fmt.Sprintf("Total: %d users.", len(users))})
 						for _, user := range users {
 							groupNames := []string{}
 							for _, userGroup := range user.Groups {
@@ -2119,10 +2139,13 @@ GLOBAL OPTIONS:
 							return nil
 						}
 
-						table := tablewriter.NewWriter(s)
-						table.SetHeader([]string{"ID", "Name", "Users", "ACLs", "Update", "Create", "Comment"})
-						table.SetBorder(false)
-						table.SetCaption(true, fmt.Sprintf("Total: %d user groups.", len(userGroups)))
+						table := tablewriter.NewTable(s,
+							tablewriter.WithRenderer(renderer.NewBlueprint(tw.Rendition{
+								Borders: tw.BorderNone,
+							})),
+						)
+						table.Header([]string{"ID", "Name", "Users", "ACLs", "Update", "Create", "Comment"})
+						table.Caption(tw.Caption{Text: fmt.Sprintf("Total: %d user groups.", len(userGroups))})
 						for _, userGroup := range userGroups {
 							table.Append([]string{
 								fmt.Sprintf("%d", userGroup.ID),
@@ -2328,10 +2351,13 @@ GLOBAL OPTIONS:
 							return nil
 						}
 
-						table := tablewriter.NewWriter(s)
-						table.SetHeader([]string{"ID", "User", "Updated", "Created", "Comment"})
-						table.SetBorder(false)
-						table.SetCaption(true, fmt.Sprintf("Total: %d userkeys.", len(userKeys)))
+						table := tablewriter.NewTable(s,
+							tablewriter.WithRenderer(renderer.NewBlueprint(tw.Rendition{
+								Borders: tw.BorderNone,
+							})),
+						)
+						table.Header([]string{"ID", "User", "Updated", "Created", "Comment"})
+						table.Caption(tw.Caption{Text: fmt.Sprintf("Total: %d userkeys.", len(userKeys))})
 						for _, userkey := range userKeys {
 							email := naMessage
 							if userkey.User != nil {
@@ -2454,10 +2480,13 @@ GLOBAL OPTIONS:
 							return nil
 						}
 
-						table := tablewriter.NewWriter(s)
-						table.SetHeader([]string{"ID", "User", "Host", "Status", "Start", "Duration", "Error", "Comment"})
-						table.SetBorder(false)
-						table.SetCaption(true, fmt.Sprintf("Total: %d sessions.", len(sessions)))
+						table := tablewriter.NewTable(s,
+							tablewriter.WithRenderer(renderer.NewBlueprint(tw.Rendition{
+								Borders: tw.BorderNone,
+							})),
+						)
+						table.Header([]string{"ID", "User", "Host", "Status", "Start", "Duration", "Error", "Comment"})
+						table.Caption(tw.Caption{Text: fmt.Sprintf("Total: %d sessions.", len(sessions))})
 						for _, session := range sessions {
 							var duration string
 							if session.StoppedAt == nil || session.StoppedAt.IsZero() {
