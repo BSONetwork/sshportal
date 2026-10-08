@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"database/sql"
 	"fmt"
 	"log"
 	"math"
@@ -24,6 +26,7 @@ import (
 type serverConfig struct {
 	aesKey          string
 	dbDriver, dbURL string
+	dbFallbackURL   string
 	logsLocation    string
 	bindAddr        string
 	debug, demo     bool
@@ -33,15 +36,19 @@ type serverConfig struct {
 
 func parseServerConfig(c *cli.Context) (*serverConfig, error) {
 	ret := &serverConfig{
-		aesKey:       c.String("aes-key"),
-		dbDriver:     c.String("db-driver"),
-		dbURL:        c.String("db-conn"),
-		bindAddr:     c.String("bind-address"),
-		debug:        c.Bool("debug"),
-		demo:         c.Bool("demo"),
-		logsLocation: c.String("logs-location"),
-		idleTimeout:  c.Duration("idle-timeout"),
-		aclCheckCmd:  c.String("acl-check-cmd"),
+		aesKey:        c.String("aes-key"),
+		dbDriver:      c.String("db-driver"),
+		dbURL:         c.String("db-conn"),
+		dbFallbackURL: c.String("db-conn-fallback"),
+		bindAddr:      c.String("bind-address"),
+		debug:         c.Bool("debug"),
+		demo:          c.Bool("demo"),
+		logsLocation:  c.String("logs-location"),
+		idleTimeout:   c.Duration("idle-timeout"),
+		aclCheckCmd:   c.String("acl-check-cmd"),
+	}
+	if ret.dbFallbackURL != "" && ret.dbDriver != "mysql" {
+		return nil, fmt.Errorf("db-conn-fallback is only supported with the mysql driver")
 	}
 	switch len(ret.aesKey) {
 	case 0, 16, 24, 32:
@@ -76,6 +83,14 @@ func dbConnect(c *serverConfig, config gorm.Option) (*gorm.DB, error) {
 	}
 
 	if c.dbDriver == "mysql" {
+		if c.dbFallbackURL != "" {
+			connector, err := newFailoverConnector(c.dbURL, c.dbFallbackURL)
+			if err != nil {
+				return nil, err
+			}
+			go connector.watchFailback(context.Background())
+			return gorm.Open(mysql.New(mysql.Config{Conn: sql.OpenDB(connector)}), config)
+		}
 		dbOpen = mysql.Open
 	}
 	return gorm.Open(dbOpen(c.dbURL), config)
@@ -84,10 +99,13 @@ func dbConnect(c *serverConfig, config gorm.Option) (*gorm.DB, error) {
 func server(c *serverConfig) (err error) {
 	// configure db logging
 
-	db, _ := dbConnect(c, &gorm.Config{
+	db, err := dbConnect(c, &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
 		DisableForeignKeyConstraintWhenMigrating: true,
 	})
+	if err != nil {
+		return err
+	}
 	sqlDB, err := db.DB()
 
 	defer func() {

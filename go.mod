@@ -7,6 +7,7 @@ require (
 	github.com/dustin/go-humanize v1.1.0
 	github.com/gliderlabs/ssh v0.3.8
 	github.com/go-gormigrate/gormigrate/v2 v2.1.7
+	github.com/go-sql-driver/mysql v1.10.1
 	github.com/kr/pty v1.1.8
 	github.com/mgutz/ansi v0.0.0-20200706080929-d51e80ef957d
 	github.com/olekukonko/tablewriter v1.1.5
@@ -34,7 +35,6 @@ require (
 	github.com/cpuguy83/go-md2man/v2 v2.0.7 // indirect
 	github.com/creack/pty v1.1.24 // indirect
 	github.com/fatih/color v1.19.0 // indirect
-	github.com/go-sql-driver/mysql v1.10.1 // indirect
 	github.com/goccy/go-json v0.11.2 // indirect
 	github.com/gopherjs/gopherjs v1.17.2 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect

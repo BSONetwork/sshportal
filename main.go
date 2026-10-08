@@ -58,6 +58,11 @@ func main() {
 					Value:  "./sshportal.db",
 					Usage:  "GORM connection string",
 				},
+				cli.StringFlag{
+					Name:   "db-conn-fallback",
+					EnvVar: "SSHPORTAL_DATABASE_URL_FALLBACK",
+					Usage:  "MySQL connection string used while db-conn is unreachable (needs two-way replication)",
+				},
 				cli.BoolFlag{
 					Name:   "debug, D",
 					EnvVar: "SSHPORTAL_DEBUG",
