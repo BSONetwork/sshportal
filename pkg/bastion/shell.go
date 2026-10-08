@@ -166,7 +166,7 @@ GLOBAL OPTIONS:
 							acl.HostPattern = strings.Replace("^"+acl.HostPattern, "*", ".*"+"$", -1)
 							_, patternErr := regexp.Compile(acl.HostPattern)
 							if patternErr != nil {
-								return fmt.Errorf("Error: invalid regexp for hostgroup pattern", acl.HostPattern, patternErr)
+								return fmt.Errorf("Error: invalid regexp for hostgroup pattern %q: %w", acl.HostPattern, patternErr)
 							}
 							if !regexp.MustCompile(`\^[\w-_]+/.*\*.*`).MatchString(acl.HostPattern) {
 								return fmt.Errorf("Error: global wildcards are not allowed, you need to prefix them with a path like [something]/*")
@@ -348,7 +348,7 @@ GLOBAL OPTIONS:
 								hostPattern = strings.Replace("^"+c.String("pattern"), "*", ".*"+"$", -1)
 								_, patternErr := regexp.Compile(hostPattern)
 								if patternErr != nil {
-									return fmt.Errorf("Error: invalid regexp for hostgroup pattern", hostPattern, patternErr)
+									return fmt.Errorf("Error: invalid regexp for hostgroup pattern %q: %w", hostPattern, patternErr)
 								}
 								if !regexp.MustCompile(`\^[\w-_]+/.*\*.*`).MatchString(hostPattern) {
 									return fmt.Errorf("Error: global wildcards are not allowed, you need to prefix them with a path like [something]/*")
