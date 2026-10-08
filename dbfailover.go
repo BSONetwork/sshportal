@@ -48,7 +48,9 @@ type dbTarget struct {
 
 // failoverConnector opens MySQL connections against a primary and a fallback.
 // New connections go to the active target. When it is unreachable they go to
-// the other one, which becomes active. Going back to the primary is left to
+// the other one, which becomes active. A target that answers with a MySQL
+// error (too many connections, access denied, ...) is reachable, so the error
+// is returned without switching. Going back to the primary is left to
 // watchFailback, because the primary must first replay the writes made on the
 // fallback.
 type failoverConnector struct {
@@ -89,7 +91,12 @@ func (f *failoverConnector) Connect(ctx context.Context) (driver.Conn, error) {
 	for _, i := range []int{active, 1 - active} {
 		conn, err := f.targets[i].connector.Connect(ctx)
 		if err != nil {
-			errs = append(errs, fmt.Errorf("%s: %w", f.targets[i].addr, err))
+			err = fmt.Errorf("%s: %w", f.targets[i].addr, err)
+			var mysqlErr *gomysql.MySQLError
+			if errors.As(err, &mysqlErr) {
+				return nil, errors.Join(append(errs, err)...)
+			}
+			errs = append(errs, err)
 			continue
 		}
 		mc, ok := conn.(mysqlDriverConn)
@@ -110,8 +117,10 @@ func (f *failoverConnector) Driver() driver.Driver {
 }
 
 // watchFailback moves new connections back to the primary once it is
-// reachable and has replayed every write made on the fallback. Until then the
-// portal stays on the fallback, so it never writes to a primary that is behind.
+// reachable and has replayed every write made on the fallback. It does not
+// stop other clients from writing to the primary in the meantime, and Connect
+// still goes to a primary that is behind when the fallback is unreachable,
+// because availability comes first.
 func (f *failoverConnector) watchFailback(ctx context.Context) {
 	ticker := time.NewTicker(failbackInterval)
 	defer ticker.Stop()

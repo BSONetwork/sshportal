@@ -5,6 +5,8 @@ import (
 	"database/sql/driver"
 	"errors"
 	"testing"
+
+	gomysql "github.com/go-sql-driver/mysql"
 )
 
 type fakeConn struct{ mysqlDriverConn }
@@ -12,11 +14,17 @@ type fakeConn struct{ mysqlDriverConn }
 func (fakeConn) IsValid() bool { return true }
 func (fakeConn) Close() error  { return nil }
 
-type fakeConnector struct{ up bool }
+type fakeConnector struct {
+	up        bool
+	serverErr error
+}
 
 func (c *fakeConnector) Connect(context.Context) (driver.Conn, error) {
 	if !c.up {
 		return nil, errors.New("connection refused")
+	}
+	if c.serverErr != nil {
+		return nil, c.serverErr
 	}
 	return fakeConn{}, nil
 }
@@ -43,6 +51,16 @@ func TestFailoverConnect(t *testing.T) {
 	}
 
 	onPrimary := connect(0)
+
+	// A primary that answers with an error is reachable: no failover.
+	primary.serverErr = &gomysql.MySQLError{Number: 1040, Message: "Too many connections"}
+	if _, err := f.Connect(context.Background()); err == nil {
+		t.Error("Connect must return the primary's server error")
+	}
+	if f.active.Load() != 0 {
+		t.Error("a server error must not switch to the fallback")
+	}
+	primary.serverErr = nil
 
 	primary.up = false
 	connect(1)
